@@ -1,8 +1,8 @@
 import { Suspense } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
-import { DashboardContent } from "@/components/dashboard/dashboard-content"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { DashboardError } from "@/components/dashboard/dashboard-error"
+import { RealTimeDashboard } from "@/components/dashboard/real-time-dashboard"
 
 // Loading component to show while data is being fetched
 function DashboardSkeleton() {
@@ -33,7 +33,10 @@ export default function DashboardPage() {
   return (
     <ErrorBoundary fallback={<DashboardError />}>
       <Suspense fallback={<DashboardSkeleton />}>
-        <DashboardContent />
+        <div className="space-y-8">
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <RealTimeDashboard />
+        </div>
       </Suspense>
     </ErrorBoundary>
   )
