@@ -2,7 +2,55 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
+// Define allowed origins based on environment
+const allowedOrigins = [
+  "https://smartpro-business-hub.vercel.app",
+  "https://smartpro-business-hub-git-main.vercel.app",
+  "http://localhost:3000",
+]
+
+// Helper function to check if the request is for an API route
+function isApiRoute(pathname: string) {
+  return pathname.startsWith("/api/")
+}
+
 export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
+  const origin = req.headers.get("origin")
+
+  // Only apply CORS middleware to API routes
+  if (isApiRoute(pathname)) {
+    // Handle preflight OPTIONS request
+    if (req.method === "OPTIONS") {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token, X-Requested-With",
+          "Access-Control-Allow-Credentials": "true",
+          "Access-Control-Max-Age": "86400", // 24 hours
+        },
+      })
+    }
+
+    // Handle actual request
+    const response = NextResponse.next()
+
+    // Add CORS headers to the response
+    if (origin && allowedOrigins.includes(origin)) {
+      response.headers.set("Access-Control-Allow-Origin", origin)
+    } else {
+      response.headers.set("Access-Control-Allow-Origin", allowedOrigins[0])
+    }
+
+    response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    response.headers.set("Access-Control-Allow-Credentials", "true")
+
+    return response
+  }
+
   // Get the current URL and path
   const url = req.nextUrl
   const path = url.pathname
@@ -65,6 +113,13 @@ function isProtectedRoute(pathname: string): boolean {
   )
 }
 
+// Configure the middleware to run on specific paths
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)", "/"],
+  matcher: [
+    // Apply to all API routes
+    "/api/:path*",
+    // Exclude Next.js specific API routes
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/",
+  ],
 }
