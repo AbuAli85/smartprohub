@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,20 @@ export function DatabaseConnectionSetup() {
   } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [savedUrls, setSavedUrls] = useState<string[]>([])
+  const [isMounted, setIsMounted] = useState(false)
+
+  // Only access localStorage after component has mounted on the client
+  useEffect(() => {
+    setIsMounted(true)
+    try {
+      const storedUrls = localStorage.getItem("databaseUrls")
+      if (storedUrls) {
+        setSavedUrls(JSON.parse(storedUrls))
+      }
+    } catch (error) {
+      console.error("Error accessing localStorage:", error)
+    }
+  }, [])
 
   const testConnection = async () => {
     if (!databaseUrl) {
@@ -49,12 +63,18 @@ export function DatabaseConnectionSetup() {
           details: data,
         })
 
-        // Save URL to local storage if it's not already there
-        const urls = JSON.parse(localStorage.getItem("databaseUrls") || "[]")
-        if (!urls.includes(databaseUrl)) {
-          const newUrls = [...urls, databaseUrl]
-          localStorage.setItem("databaseUrls", JSON.stringify(newUrls))
-          setSavedUrls(newUrls)
+        // Only save to localStorage if we're in the browser
+        if (isMounted && typeof window !== "undefined") {
+          try {
+            const urls = JSON.parse(localStorage.getItem("databaseUrls") || "[]")
+            if (!urls.includes(databaseUrl)) {
+              const newUrls = [...urls, databaseUrl]
+              localStorage.setItem("databaseUrls", JSON.stringify(newUrls))
+              setSavedUrls(newUrls)
+            }
+          } catch (error) {
+            console.error("Error saving to localStorage:", error)
+          }
         }
       } else {
         setTestResult({
@@ -111,12 +131,6 @@ export function DatabaseConnectionSetup() {
     }
   }
 
-  // Load saved URLs from local storage on component mount
-  useState(() => {
-    const urls = JSON.parse(localStorage.getItem("databaseUrls") || "[]")
-    setSavedUrls(urls)
-  })
-
   return (
     <Card className="w-full max-w-3xl mx-auto">
       <CardHeader>
@@ -149,7 +163,7 @@ export function DatabaseConnectionSetup() {
                 </p>
               </div>
 
-              {savedUrls.length > 0 && (
+              {isMounted && savedUrls.length > 0 && (
                 <div className="space-y-2">
                   <Label>Previously used connections</Label>
                   <div className="space-y-2">

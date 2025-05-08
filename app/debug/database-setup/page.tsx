@@ -1,4 +1,12 @@
-import { DatabaseConnectionSetup } from "@/components/debug/database-connection-setup"
+"use client"
+
+import dynamic from "next/dynamic"
+
+// Dynamically import the component with no SSR
+const DatabaseConnectionSetup = dynamic(
+  () => import("@/components/debug/database-connection-setup").then((mod) => mod.DatabaseConnectionSetup),
+  { ssr: false },
+)
 
 export default function DatabaseSetupPage() {
   return (
