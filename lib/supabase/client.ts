@@ -51,6 +51,24 @@ export function getSupabaseClient() {
           autoRefreshToken: true,
           detectSessionInUrl: true,
         },
+        global: {
+          // Add retries for network failures
+          fetch: (url, options) => {
+            return fetch(url, {
+              ...options,
+              // Add retry logic
+              signal: options?.signal,
+            }).catch((error) => {
+              console.error("Fetch error in Supabase client:", error)
+              // Retry once after a short delay
+              return new Promise((resolve) => {
+                setTimeout(() => {
+                  resolve(fetch(url, options))
+                }, 1000)
+              })
+            })
+          },
+        },
       },
     })
 

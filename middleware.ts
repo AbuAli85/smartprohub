@@ -19,10 +19,13 @@ function isAuthRoute(pathname: string) {
   return (
     pathname.startsWith("/auth/") ||
     pathname === "/auth-test" ||
+    pathname === "/auth-test-simple" ||
     pathname.includes("callback") ||
     pathname.includes("reset-password") ||
     pathname.includes("sign-in") ||
-    pathname.includes("sign-up")
+    pathname.includes("sign-up") ||
+    pathname.startsWith("/setup/") ||
+    pathname.startsWith("/debug/")
   )
 }
 
@@ -87,23 +90,38 @@ export async function middleware(req: NextRequest) {
       data: { session },
     } = await supabase.auth.getSession()
 
-    // If user is not logged in and tries to access a protected route, redirect to debug page
+    // If user is not logged in and tries to access a protected route, redirect to login page
     if (!session && isProtectedRoute(pathname)) {
-      return NextResponse.redirect(new URL(`/auth/debug?from=${encodeURIComponent(pathname)}`, req.url))
+      const redirectUrl = new URL(`/auth/login?redirectTo=${encodeURIComponent(pathname)}`, req.url)
+      return NextResponse.redirect(redirectUrl)
     }
 
     // If user is logged in and accessing the root path, redirect to dashboard
     if (session && pathname === "/") {
-      return NextResponse.redirect(new URL("/dashboard", req.url))
+      // Check if user has a role, if not redirect to profile setup
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", session.user.id).single()
+
+      if (!profile?.role) {
+        return NextResponse.redirect(new URL("/profile-setup", req.url))
+      }
+
+      // Redirect based on role
+      if (profile.role === "admin") {
+        return NextResponse.redirect(new URL("/admin/dashboard", req.url))
+      } else if (profile.role === "provider") {
+        return NextResponse.redirect(new URL("/provider/dashboard", req.url))
+      } else {
+        return NextResponse.redirect(new URL("/client/dashboard", req.url))
+      }
     }
 
     return res
   } catch (e) {
     console.error("Middleware error:", e)
 
-    // If there's an error, redirect to the debug page
-    if (isProtectedRoute(pathname)) {
-      return NextResponse.redirect(new URL(`/auth/debug?error=middleware_error`, req.url))
+    // If there's an error, allow access to debug routes
+    if (isProtectedRoute(pathname) && !pathname.startsWith("/debug/")) {
+      return NextResponse.redirect(new URL(`/auth/troubleshoot?error=${encodeURIComponent(String(e))}`, req.url))
     }
 
     return res

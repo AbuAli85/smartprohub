@@ -89,7 +89,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error("Error refreshing session:", error)
         setAuthError(error)
-        clearLocalSession()
+
+        // Only clear session if it's an expired session error
+        if (error.message.includes("expired") || error.message.includes("invalid")) {
+          clearLocalSession()
+          toast({
+            title: "Session expired",
+            description: "Your session has expired. Please sign in again.",
+            variant: "destructive",
+          })
+        }
+
         setIsLoading(false)
         setIsRefreshing(false)
         return
@@ -101,10 +111,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(!!data.session)
       setAuthError(null)
 
-      // Force reload the page to ensure all components pick up the new session
-      if (data.session) {
-        window.location.reload()
-      } else {
+      // Don't force reload the page, just update state
+      if (!data.session) {
         toast({
           title: "Session refresh failed",
           description: "No session found. Please sign in again.",
@@ -114,7 +122,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Exception refreshing session:", error)
       setAuthError(error instanceof Error ? error : new Error(String(error)))
-      clearLocalSession()
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
@@ -218,17 +225,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (error.message.includes("Auth session missing")) {
               console.log("No auth session found, user is not logged in")
               setIsAuthenticated(false)
-
-              // Only redirect to login if on a protected route
-              const isProtectedRoute =
-                pathname.startsWith("/dashboard") ||
-                pathname.startsWith("/admin") ||
-                pathname.startsWith("/provider") ||
-                pathname.startsWith("/client")
-
-              if (isProtectedRoute && !pathname.includes("/auth/")) {
-                router.push(`/auth/login?redirectTo=${encodeURIComponent(pathname)}`)
-              }
             } else {
               console.error("Error getting session:", error)
               setAuthError(error)
@@ -242,6 +238,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(data.session)
           setUser(data.session?.user ?? null)
           setIsAuthenticated(!!data.session)
+
+          // Fetch user profile if session exists
+          if (data.session?.user?.id) {
+            try {
+              const { data: profileData } = await supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", data.session.user.id)
+                .single()
+
+              // Store profile data in localStorage for quick access
+              if (profileData) {
+                localStorage.setItem("userProfile", JSON.stringify(profileData))
+              }
+            } catch (profileError) {
+              console.error("Error fetching user profile:", profileError)
+            }
+          }
+
           setIsLoading(false)
         } catch (error) {
           if (!isMounted) return
@@ -256,35 +271,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Set up auth state change listener with better error handling
       try {
         console.log("Setting up auth state change listener...")
-        const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
           if (!isMounted) return
 
           console.log("Auth state changed:", event, session?.user?.id || "No user")
-          setSession(session)
-          setUser(session?.user ?? null)
-          setIsAuthenticated(!!session)
+
+          // Handle different auth events
+          switch (event) {
+            case "SIGNED_IN":
+              setSession(session)
+              setUser(session?.user ?? null)
+              setIsAuthenticated(!!session)
+              setAuthError(null)
+
+              // Fetch user profile on sign in
+              if (session?.user?.id) {
+                try {
+                  const { data: profileData } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("id", session.user.id)
+                    .single()
+
+                  if (profileData) {
+                    localStorage.setItem("userProfile", JSON.stringify(profileData))
+                  }
+                } catch (profileError) {
+                  console.error("Error fetching user profile:", profileError)
+                }
+              }
+              break
+
+            case "SIGNED_OUT":
+              clearLocalSession()
+              localStorage.removeItem("userProfile")
+              break
+
+            case "TOKEN_REFRESHED":
+              setSession(session)
+              setUser(session?.user ?? null)
+              setIsAuthenticated(!!session)
+              setAuthError(null)
+              break
+
+            case "USER_UPDATED":
+              setSession(session)
+              setUser(session?.user ?? null)
+              // Refresh profile data
+              if (session?.user?.id) {
+                try {
+                  const { data: profileData } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("id", session.user.id)
+                    .single()
+
+                  if (profileData) {
+                    localStorage.setItem("userProfile", JSON.stringify(profileData))
+                  }
+                } catch (profileError) {
+                  console.error("Error fetching updated user profile:", profileError)
+                }
+              }
+              break
+          }
+
           setIsLoading(false)
-
-          // Clear auth error when successfully signed in or token refreshed
-          if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-            setAuthError(null)
-          }
-
-          // Handle sign out event
-          if (event === "SIGNED_OUT") {
-            clearLocalSession()
-
-            // Redirect to login page if on a protected route
-            const isProtectedRoute =
-              pathname.startsWith("/dashboard") ||
-              pathname.startsWith("/admin") ||
-              pathname.startsWith("/provider") ||
-              pathname.startsWith("/client")
-
-            if (isProtectedRoute) {
-              router.push("/auth/login")
-            }
-          }
         })
 
         subscription = data.subscription
