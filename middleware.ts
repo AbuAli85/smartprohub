@@ -18,6 +18,7 @@ function isApiRoute(pathname: string) {
 function isAuthRoute(pathname: string) {
   return (
     pathname.startsWith("/auth/") ||
+    pathname.startsWith("/api/auth/") ||
     pathname === "/auth-test" ||
     pathname === "/auth-test-simple" ||
     pathname.includes("callback") ||

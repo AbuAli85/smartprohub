@@ -316,6 +316,34 @@ export function DatabaseSetup() {
     <div className="space-y-6">
       <Progress value={progress} className="h-2 w-full" />
 
+      {dbStatus === "exists" && (!validationResults?.bookings || !validationResults?.messages) && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-800">Missing Essential Tables</AlertTitle>
+          <AlertDescription className="text-amber-700">
+            <p>Some essential tables are missing from your database:</p>
+            <ul className="list-disc pl-5 mt-2">
+              {!validationResults?.bookings && (
+                <li>
+                  <span className="font-medium">Bookings table</span> -
+                  <Button variant="link" className="h-auto p-0 text-amber-800 underline" asChild>
+                    <Link href="/setup/database/fix-bookings-table">Click here to fix</Link>
+                  </Button>
+                </li>
+              )}
+              {!validationResults?.messages && (
+                <li>
+                  <span className="font-medium">Messages table</span> -
+                  <Button variant="link" className="h-auto p-0 text-amber-800 underline" asChild>
+                    <Link href="/setup/database/fix-missing-tables">Click here to fix</Link>
+                  </Button>
+                </li>
+              )}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {dbStatus === "empty" && (
         <Alert className="border-amber-200 bg-amber-50">
           <Info className="h-4 w-4 text-amber-600" />

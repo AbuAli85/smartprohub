@@ -84,7 +84,7 @@ function AuthForm({ type = "login" }: AuthFormProps) {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/api/auth/callback`,
           data: {
             full_name: fullName,
             role: role,
