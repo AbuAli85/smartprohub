@@ -1,3 +1,5 @@
+"use client"
+
 import { EnhancedChatInterface } from "@/components/messaging/enhanced-chat-interface"
 
 export default function MessagesPage() {

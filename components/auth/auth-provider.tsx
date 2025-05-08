@@ -1,10 +1,9 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
-import type { User, Session } from "@supabase/auth-helpers-nextjs"
+import type { User, Session } from "@supabase/supabase-js"
 
 type Profile = {
   id: string

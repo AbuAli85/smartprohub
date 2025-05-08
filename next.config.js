@@ -2,22 +2,18 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  experimental: {
-    // This is important to allow both app/ and pages/ directories to work together
-    appDir: true,
+  images: {
+    domains: ["localhost", "vercel.app", "supabase.co"],
+    unoptimized: true,
   },
-  // Ensure we're not using server components in pages directory
-  compiler: {
-    styledComponents: true,
+  experimental: {
+    serverActions: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: true,
-  },
-  images: {
-    unoptimized: true,
   },
 }
 

@@ -1,10 +1,12 @@
-import { neon } from "@neondatabase/serverless"
 import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
 export async function POST(request: Request) {
   try {
-    // Connect to the database
-    const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || "")
+    // Create a Supabase client using environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const supabase = createClient(supabaseUrl, supabaseKey)
 
     // SQL script to set up notifications
     const sqlScript = `
@@ -100,7 +102,19 @@ export async function POST(request: Request) {
     `
 
     // Execute the SQL script
-    await sql.query(sqlScript)
+    const { error } = await supabase.rpc("run_sql", { sql: sqlScript })
+
+    if (error) {
+      console.error("Error setting up notifications:", error)
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Failed to set up notifications",
+          error: error.message,
+        },
+        { status: 500 },
+      )
+    }
 
     return NextResponse.json({
       success: true,
