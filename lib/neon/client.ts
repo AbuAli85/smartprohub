@@ -24,6 +24,44 @@ const getDatabaseUrl = () => {
   return url
 }
 
+// Create and export the SQL client directly
+export const sql = neon(getDatabaseUrl() || "")
+
+// Execute a query with parameters - named export required by other modules
+export const executeQuery = async (text: string, params: any[] = []) => {
+  try {
+    console.log("Executing query:", text, "with params:", params)
+    const startTime = Date.now()
+    const result = await sql(text, params)
+    const duration = Date.now() - startTime
+    console.log(`Query executed in ${duration}ms`)
+    return { rows: result, rowCount: result.length }
+  } catch (error) {
+    console.error("Database query error:", error)
+    return { rows: [], rowCount: 0, error }
+  }
+}
+
+// Check database connection - named export required by other modules
+export const checkDatabaseConnection = async () => {
+  try {
+    const startTime = Date.now()
+    const result = await sql`SELECT 1 as connection_test`
+    const duration = Date.now() - startTime
+    return {
+      status: "connected",
+      message: `Connection successful (${duration}ms)`,
+      duration,
+    }
+  } catch (error: any) {
+    return {
+      status: "error",
+      message: error.message,
+      error,
+    }
+  }
+}
+
 // Update the createNeonClient function to handle missing database URL more gracefully
 export const createNeonClient = () => {
   const databaseUrl = getDatabaseUrl()
@@ -49,23 +87,10 @@ export const createNeonClient = () => {
     }
   }
 
-  // Create the SQL executor
-  const sql = neon(databaseUrl)
-
   return {
     // Execute a query with parameters
     query: async (text: string, params: any[] = []) => {
-      try {
-        console.log("Executing query:", text, "with params:", params)
-        const startTime = Date.now()
-        const result = await sql(text, params)
-        const duration = Date.now() - startTime
-        console.log(`Query executed in ${duration}ms`)
-        return { rows: result, rowCount: result.length }
-      } catch (error) {
-        console.error("Database query error:", error)
-        return { rows: [], rowCount: 0, error }
-      }
+      return executeQuery(text, params)
     },
 
     // Execute a raw SQL query
@@ -85,22 +110,7 @@ export const createNeonClient = () => {
 
     // Check if the database connection is working
     healthCheck: async () => {
-      try {
-        const startTime = Date.now()
-        const result = await sql`SELECT 1 as connection_test`
-        const duration = Date.now() - startTime
-        return {
-          status: "connected",
-          message: `Connection successful (${duration}ms)`,
-          duration,
-        }
-      } catch (error: any) {
-        return {
-          status: "error",
-          message: error.message,
-          error,
-        }
-      }
+      return checkDatabaseConnection()
     },
   }
 }
