@@ -12,10 +12,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Disable experimental features that might cause issues
+  // Ensure we're using SWC
   experimental: {
+    forceSwcTransforms: true,
     appDir: true,
-    serverActions: false,
   },
 }
 

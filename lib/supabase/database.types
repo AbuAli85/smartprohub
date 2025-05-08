@@ -1,10 +1,4 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type UserRole = "admin" | "provider" | "client" | "user" | "manager";
 
@@ -13,191 +7,191 @@ export interface Database {
     Tables: {
       profiles: {
         Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          full_name: string | null
-          avatar_url: string | null
-          role: UserRole | null
-          email: string
-          phone: string | null
-          company: string | null
-          position: string | null
-          bio: string | null
-          provider_id: string | null
-        }
+          id: string;
+          created_at: string;
+          updated_at: string;
+          full_name: string | null;
+          avatar_url: string | null;
+          role: UserRole | null;
+          email: string;
+          phone: string | null;
+          company: string | null;
+          position: string | null;
+          bio: string | null;
+          provider_id: string | null;
+        };
         Insert: {
-          id: string
-          created_at?: string
-          updated_at?: string
-          full_name?: string | null
-          avatar_url?: string | null
-          role?: UserRole | null
-          email: string
-          phone?: string | null
-          company?: string | null
-          position?: string | null
-          bio?: string | null
-          provider_id?: string | null
-        }
+          id: string;
+          created_at?: string;
+          updated_at?: string;
+          full_name?: string | null;
+          avatar_url?: string | null;
+          role?: UserRole | null;
+          email: string;
+          phone?: string | null;
+          company?: string | null;
+          position?: string | null;
+          bio?: string | null;
+          provider_id?: string | null;
+        };
         Update: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          full_name?: string | null
-          avatar_url?: string | null
-          role?: UserRole | null
-          email?: string
-          phone?: string | null
-          company?: string | null
-          position?: string | null
-          bio?: string | null
-          provider_id?: string | null
-        }
-      }
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          full_name?: string | null;
+          avatar_url?: string | null;
+          role?: UserRole | null;
+          email?: string;
+          phone?: string | null;
+          company?: string | null;
+          position?: string | null;
+          bio?: string | null;
+          provider_id?: string | null;
+        };
+      };
       bookings: {
         Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          user_id: string
-          service_id: string
-          date: string
-          time: string
-          status: string
-          notes: string | null
-        }
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          service_id: string;
+          date: string;
+          time: string;
+          status: string;
+          notes: string | null;
+        };
         Insert: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          user_id: string
-          service_id: string
-          date: string
-          time: string
-          status?: string
-          notes?: string | null
-        }
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          service_id: string;
+          date: string;
+          time: string;
+          status?: string;
+          notes?: string | null;
+        };
         Update: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          user_id?: string
-          service_id?: string
-          date?: string
-          time?: string
-          status?: string
-          notes?: string | null
-        }
-      }
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          service_id?: string;
+          date?: string;
+          time?: string;
+          status?: string;
+          notes?: string | null;
+        };
+      };
       contracts: {
         Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          user_id: string
-          title: string
-          content: string
-          status: string
-          start_date: string
-          end_date: string | null
-          value: number | null
-          document_url: string | null
-          document_name: string | null
-        }
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          title: string;
+          content: string;
+          status: string;
+          start_date: string;
+          end_date: string | null;
+          value: number | null;
+          document_url: string | null;
+          document_name: string | null;
+        };
         Insert: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          user_id: string
-          title: string
-          content: string
-          status?: string
-          start_date: string
-          end_date?: string | null
-          value?: number | null
-          document_url?: string | null
-          document_name?: string | null
-        }
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          title: string;
+          content: string;
+          status?: string;
+          start_date: string;
+          end_date?: string | null;
+          value?: number | null;
+          document_url?: string | null;
+          document_name?: string | null;
+        };
         Update: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          user_id?: string
-          title?: string
-          content?: string
-          status?: string
-          start_date?: string
-          end_date?: string | null
-          value?: number | null
-          document_url?: string | null
-          document_name?: string | null
-        }
-      }
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          title?: string;
+          content?: string;
+          status?: string;
+          start_date?: string;
+          end_date?: string | null;
+          value?: number | null;
+          document_url?: string | null;
+          document_name?: string | null;
+        };
+      };
       messages: {
         Row: {
-          id: string
-          created_at: string
-          sender_id: string
-          recipient_id: string
-          content: string
-          read: boolean
-        }
+          id: string;
+          created_at: string;
+          sender_id: string;
+          recipient_id: string;
+          content: string;
+          read: boolean;
+        };
         Insert: {
-          id?: string
-          created_at?: string
-          sender_id: string
-          recipient_id: string
-          content: string
-          read?: boolean
-        }
+          id?: string;
+          created_at?: string;
+          sender_id: string;
+          recipient_id: string;
+          content: string;
+          read?: boolean;
+        };
         Update: {
-          id?: string
-          created_at?: string
-          sender_id?: string
-          recipient_id?: string
-          content?: string
-          read?: boolean
-        }
-      }
+          id?: string;
+          created_at?: string;
+          sender_id?: string;
+          recipient_id?: string;
+          content?: string;
+          read?: boolean;
+        };
+      };
       services: {
         Row: {
-          id: string
-          created_at: string
-          name: string
-          description: string | null
-          price: number
-          duration: number
-          category: string
-        }
+          id: string;
+          created_at: string;
+          name: string;
+          description: string | null;
+          price: number;
+          duration: number;
+          category: string;
+        };
         Insert: {
-          id?: string
-          created_at?: string
-          name: string
-          description?: string | null
-          price: number
-          duration: number
-          category: string
-        }
+          id?: string;
+          created_at?: string;
+          name: string;
+          description?: string | null;
+          price: number;
+          duration: number;
+          category: string;
+        };
         Update: {
-          id?: string
-          created_at?: string
-          name?: string
-          description?: string | null
-          price?: number
-          duration?: number
-          category?: string
-        }
-      }
-    }
+          id?: string;
+          created_at?: string;
+          name?: string;
+          description?: string | null;
+          price?: number;
+          duration?: number;
+          category?: string;
+        };
+      };
+    };
     Views: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     Functions: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     Enums: {
-      [_ in never]: never
-    }
-  }
+      [_ in never]: never;
+    };
+  };
 }
