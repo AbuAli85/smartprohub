@@ -1,7 +1,6 @@
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
-import { applyCorsHeaders, handleCorsOptions } from "@/lib/cors"
 
 export async function GET(request: Request) {
   try {
@@ -45,7 +44,7 @@ export async function GET(request: Request) {
       console.error("Error fetching profile:", profileError)
     }
 
-    const response = NextResponse.json({
+    return NextResponse.json({
       status: "authenticated",
       user: {
         id: session.user.id,
@@ -57,21 +56,18 @@ export async function GET(request: Request) {
         expires: new Date(session.expires_at! * 1000).toISOString(),
       },
     })
-
-    return applyCorsHeaders(request, response)
   } catch (error) {
     console.error("Auth status error:", error)
-    const response = NextResponse.json(
+    return NextResponse.json(
       {
         status: "error",
         message: "Internal server error",
       },
       { status: 500 },
     )
-    return applyCorsHeaders(request, response)
   }
 }
 
 export async function OPTIONS(request: Request) {
-  return handleCorsOptions()
+  return NextResponse.json({}, { status: 200 })
 }

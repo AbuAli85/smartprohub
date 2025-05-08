@@ -29,6 +29,29 @@ function isAuthRoute(pathname: string) {
   )
 }
 
+// Helper function to check if a route is a public route
+function isPublicRoute(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/about") ||
+    pathname.startsWith("/contact") ||
+    pathname.startsWith("/pricing") ||
+    pathname.startsWith("/legal") ||
+    pathname.startsWith("/blog")
+  )
+}
+
+// Helper function to check if a route is protected
+function isProtectedRoute(pathname: string): boolean {
+  return (
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/provider") ||
+    pathname.startsWith("/client") ||
+    pathname === "/profile-setup"
+  )
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const origin = req.headers.get("origin")
@@ -96,22 +119,55 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
 
-    // If user is logged in and accessing the root path, redirect to dashboard
-    if (session && pathname === "/") {
-      // Check if user has a role, if not redirect to profile setup
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", session.user.id).single()
+    // If user is logged in and accessing the root path, redirect to appropriate dashboard
+    if (session && (pathname === "/" || pathname === "/dashboard")) {
+      try {
+        // Check if user has a role, if not redirect to profile setup
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", session.user.id).single()
 
-      if (!profile?.role) {
-        return NextResponse.redirect(new URL("/profile-setup", req.url))
+        if (!profile?.role) {
+          return NextResponse.redirect(new URL("/profile-setup", req.url))
+        }
+
+        // Redirect based on role
+        if (profile.role === "admin") {
+          return NextResponse.redirect(new URL("/admin/dashboard", req.url))
+        } else if (profile.role === "provider") {
+          return NextResponse.redirect(new URL("/provider/dashboard", req.url))
+        } else if (profile.role === "client") {
+          return NextResponse.redirect(new URL("/client/dashboard", req.url))
+        } else {
+          // Default fallback if role is not recognized
+          return NextResponse.redirect(new URL("/dashboard", req.url))
+        }
+      } catch (profileError) {
+        console.error("Error fetching profile in middleware:", profileError)
+        // If we can't get the profile, redirect to the generic dashboard
+        return NextResponse.redirect(new URL("/dashboard", req.url))
       }
+    }
 
-      // Redirect based on role
-      if (profile.role === "admin") {
-        return NextResponse.redirect(new URL("/admin/dashboard", req.url))
-      } else if (profile.role === "provider") {
-        return NextResponse.redirect(new URL("/provider/dashboard", req.url))
-      } else {
-        return NextResponse.redirect(new URL("/client/dashboard", req.url))
+    // Role-based access control
+    if (session) {
+      try {
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", session.user.id).single()
+
+        // Check if user is trying to access a role-specific area they don't have access to
+        if (profile?.role) {
+          if (pathname.startsWith("/admin/") && profile.role !== "admin") {
+            return NextResponse.redirect(new URL("/dashboard", req.url))
+          }
+
+          if (pathname.startsWith("/provider/") && profile.role !== "provider") {
+            return NextResponse.redirect(new URL("/dashboard", req.url))
+          }
+
+          if (pathname.startsWith("/client/") && profile.role !== "client") {
+            return NextResponse.redirect(new URL("/dashboard", req.url))
+          }
+        }
+      } catch (error) {
+        console.error("Error checking role in middleware:", error)
       }
     }
 
@@ -126,17 +182,6 @@ export async function middleware(req: NextRequest) {
 
     return res
   }
-}
-
-// Helper function to check if a route is protected
-function isProtectedRoute(pathname: string): boolean {
-  return (
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/admin") ||
-    pathname.startsWith("/provider") ||
-    pathname.startsWith("/client") ||
-    pathname === "/profile-setup"
-  )
 }
 
 // Configure the middleware to run on specific paths

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client"
 import type { Session, User } from "@supabase/supabase-js"
 import { useRouter, usePathname } from "next/navigation"
@@ -10,9 +10,19 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { ReloadIcon } from "@radix-ui/react-icons"
 
+// Define a type for user profile data
+type UserProfile = {
+  id: string
+  role?: string
+  full_name?: string
+  email?: string
+  [key: string]: any
+}
+
 type AuthContextType = {
   user: User | null
   session: Session | null
+  profile: UserProfile | null
   isLoading: boolean
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
@@ -24,6 +34,7 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
+  profile: null,
   isLoading: true,
   signOut: async () => {},
   refreshSession: async () => {},
@@ -34,9 +45,21 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext)
 
+// Helper to safely parse JSON
+const safeJsonParse = (str: string | null, fallback: any = null): any => {
+  if (!str) return fallback
+  try {
+    return JSON.parse(str)
+  } catch (e) {
+    console.error("Error parsing JSON:", e)
+    return fallback
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSupabaseReady, setIsSupabaseReady] = useState(false)
   const [authError, setAuthError] = useState<Error | null>(null)
@@ -45,17 +68,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
 
+  // Function to fetch user profile
+  const fetchUserProfile = useCallback(async (userId: string) => {
+    try {
+      if (!isSupabaseConfigured()) return null
+
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+
+      if (error) {
+        console.error("Error fetching user profile:", error)
+        return null
+      }
+
+      if (data) {
+        // Store profile in state and localStorage
+        setProfile(data)
+        localStorage.setItem("userProfile", JSON.stringify(data))
+        return data
+      }
+
+      return null
+    } catch (error) {
+      console.error("Exception fetching user profile:", error)
+      return null
+    }
+  }, [])
+
   // Function to clear local session data
-  const clearLocalSession = () => {
+  const clearLocalSession = useCallback(() => {
     try {
       setUser(null)
       setSession(null)
+      setProfile(null)
       setIsAuthenticated(false)
 
       // Clear any local storage items related to auth
       if (typeof window !== "undefined") {
         try {
           // Clear Supabase items from localStorage
+          localStorage.removeItem("userProfile")
+
           const localStorageKeys = Object.keys(localStorage)
           const supabaseKeys = localStorageKeys.filter(
             (key) => key.startsWith("supabase.auth") || key.startsWith("sb-"),
@@ -71,9 +123,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Error in clearLocalSession:", error)
     }
-  }
+  }, [])
 
-  const refreshSession = async () => {
+  const refreshSession = useCallback(async () => {
     try {
       setIsRefreshing(true)
 
@@ -111,8 +163,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(!!data.session)
       setAuthError(null)
 
-      // Don't force reload the page, just update state
-      if (!data.session) {
+      // Fetch user profile if session exists
+      if (data.session?.user?.id) {
+        await fetchUserProfile(data.session.user.id)
+      } else {
         toast({
           title: "Session refresh failed",
           description: "No session found. Please sign in again.",
@@ -126,9 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }
+  }, [clearLocalSession, fetchUserProfile])
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       if (!isSupabaseConfigured()) {
         clearLocalSession()
@@ -141,13 +195,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Use router.push for client-side navigation
       router.push("/")
+
+      toast({
+        title: "Signed out",
+        description: "You have been successfully signed out.",
+      })
     } catch (error) {
       console.error("Error signing out:", error)
       // Force clear session even if sign out fails
       clearLocalSession()
       router.push("/")
     }
-  }
+  }, [clearLocalSession, router])
 
   // Handle auth errors
   useEffect(() => {
@@ -213,6 +272,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let isMounted = true
       let subscription: { unsubscribe: () => void } | null = null
 
+      // Try to load profile from localStorage first for faster rendering
+      if (typeof window !== "undefined") {
+        const cachedProfile = safeJsonParse(localStorage.getItem("userProfile"))
+        if (cachedProfile) {
+          setProfile(cachedProfile)
+        }
+      }
+
       const getSession = async () => {
         try {
           console.log("Getting initial session...")
@@ -241,20 +308,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Fetch user profile if session exists
           if (data.session?.user?.id) {
-            try {
-              const { data: profileData } = await supabase
-                .from("profiles")
-                .select("*")
-                .eq("id", data.session.user.id)
-                .single()
-
-              // Store profile data in localStorage for quick access
-              if (profileData) {
-                localStorage.setItem("userProfile", JSON.stringify(profileData))
-              }
-            } catch (profileError) {
-              console.error("Error fetching user profile:", profileError)
-            }
+            await fetchUserProfile(data.session.user.id)
           }
 
           setIsLoading(false)
@@ -286,25 +340,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
               // Fetch user profile on sign in
               if (session?.user?.id) {
-                try {
-                  const { data: profileData } = await supabase
-                    .from("profiles")
-                    .select("*")
-                    .eq("id", session.user.id)
-                    .single()
-
-                  if (profileData) {
-                    localStorage.setItem("userProfile", JSON.stringify(profileData))
-                  }
-                } catch (profileError) {
-                  console.error("Error fetching user profile:", profileError)
-                }
+                await fetchUserProfile(session.user.id)
               }
               break
 
             case "SIGNED_OUT":
               clearLocalSession()
-              localStorage.removeItem("userProfile")
               break
 
             case "TOKEN_REFRESHED":
@@ -319,19 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUser(session?.user ?? null)
               // Refresh profile data
               if (session?.user?.id) {
-                try {
-                  const { data: profileData } = await supabase
-                    .from("profiles")
-                    .select("*")
-                    .eq("id", session.user.id)
-                    .single()
-
-                  if (profileData) {
-                    localStorage.setItem("userProfile", JSON.stringify(profileData))
-                  }
-                } catch (profileError) {
-                  console.error("Error fetching updated user profile:", profileError)
-                }
+                await fetchUserProfile(session.user.id)
               }
               break
           }
@@ -359,7 +388,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Error in auth session effect:", error)
       setIsLoading(false)
     }
-  }, [pathname, router])
+  }, [clearLocalSession, fetchUserProfile])
 
   // Render auth error UI if there's an error
   if (authError && !isLoading && authError.message !== "Auth session missing!") {
@@ -397,6 +426,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         session,
+        profile,
         isLoading,
         signOut,
         refreshSession,
