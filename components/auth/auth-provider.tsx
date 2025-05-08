@@ -9,6 +9,7 @@ import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { ReloadIcon } from "@radix-ui/react-icons"
+import { SessionTimeoutWarning } from "@/components/auth/session-timeout-warning"
 
 // Define a type for user profile data
 type UserProfile = {
@@ -73,11 +74,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isSupabaseConfigured()) return null
 
+      // First try to get from localStorage for immediate display
+      const cachedProfile = safeJsonParse(localStorage.getItem("userProfile"))
+      if (cachedProfile && cachedProfile.id === userId) {
+        setProfile(cachedProfile)
+      }
+
+      // Then fetch fresh data from the server
       const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
       if (error) {
         console.error("Error fetching user profile:", error)
-        return null
+        return cachedProfile || null
       }
 
       if (data) {
@@ -87,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return data
       }
 
-      return null
+      return cachedProfile || null
     } catch (error) {
       console.error("Exception fetching user profile:", error)
       return null
@@ -436,6 +444,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      {isAuthenticated && <SessionTimeoutWarning />}
     </AuthContext.Provider>
   )
 }
