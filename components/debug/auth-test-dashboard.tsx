@@ -82,6 +82,19 @@ export function AuthTestDashboard() {
   const handleRefreshSession = async () => {
     setIsRefreshing(true)
     try {
+      // First check if we have a session
+      const { data: sessionData } = await supabase.auth.getSession()
+
+      if (!sessionData.session) {
+        toast({
+          title: "No active session",
+          description: "You need to log in first before refreshing a session.",
+          variant: "destructive",
+        })
+        setIsRefreshing(false)
+        return
+      }
+
       await refreshSession()
       toast({
         title: "Session refreshed",
@@ -158,7 +171,7 @@ export function AuthTestDashboard() {
             )}
           </CardContent>
           <CardFooter className="flex justify-between">
-            <Button onClick={handleRefreshSession} disabled={isRefreshing}>
+            <Button onClick={handleRefreshSession} disabled={isRefreshing || !isAuthenticated}>
               {isRefreshing ? (
                 <>
                   <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />
@@ -280,9 +293,16 @@ export function AuthTestDashboard() {
               <CardDescription>Current session information</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-96">
-                <pre className="text-sm">{formatJSON(session)}</pre>
-              </div>
+              {!session ? (
+                <Alert>
+                  <AlertTitle>No Active Session</AlertTitle>
+                  <AlertDescription>Please log in to see session details.</AlertDescription>
+                </Alert>
+              ) : (
+                <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-96">
+                  <pre className="text-sm">{formatJSON(session)}</pre>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -294,21 +314,28 @@ export function AuthTestDashboard() {
               <CardDescription>Current user and profile information</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-medium mb-2">User</h3>
-                  <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-60">
-                    <pre className="text-sm">{formatJSON(user)}</pre>
+              {!user ? (
+                <Alert>
+                  <AlertTitle>No User Data</AlertTitle>
+                  <AlertDescription>Please log in to see user and profile details.</AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-medium mb-2">User</h3>
+                    <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-60">
+                      <pre className="text-sm">{formatJSON(user)}</pre>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Profile</h3>
-                  <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-60">
-                    <pre className="text-sm">{formatJSON(profile)}</pre>
+                  <div>
+                    <h3 className="text-lg font-medium mb-2">Profile</h3>
+                    <div className="bg-gray-100 p-4 rounded-md overflow-auto max-h-60">
+                      <pre className="text-sm">{formatJSON(profile)}</pre>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

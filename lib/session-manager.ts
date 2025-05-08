@@ -52,6 +52,16 @@ export async function checkSession(): Promise<SessionInfo> {
     const { data, error } = await supabase.auth.getSession()
 
     if (error) {
+      // Handle "Auth session missing" error gracefully
+      if (error.message.includes("Auth session missing")) {
+        const info: SessionInfo = {
+          status: "unauthenticated",
+          lastChecked: new Date(),
+        }
+        storeSessionInfo(info)
+        return info
+      }
+
       const info: SessionInfo = {
         status: "error",
         error: error.message,
@@ -107,7 +117,8 @@ export function getSessionTimeRemaining(): number | null {
   if (!isBrowser()) return null
 
   try {
-    const session = supabase.auth.session()
+    // Use the getSession method instead of directly accessing the session
+    const session = supabase.auth.session?.()
     if (!session || !session.expires_at) return null
 
     const expiresAt = session.expires_at * 1000 // Convert to milliseconds
@@ -124,9 +135,31 @@ export function getSessionTimeRemaining(): number | null {
 // Attempt to refresh the session
 export async function refreshSession(): Promise<SessionInfo> {
   try {
+    // First check if we have a session
+    const { data: sessionData } = await supabase.auth.getSession()
+
+    if (!sessionData.session) {
+      const info: SessionInfo = {
+        status: "unauthenticated",
+        lastChecked: new Date(),
+      }
+      storeSessionInfo(info)
+      return info
+    }
+
     const { data, error } = await supabase.auth.refreshSession()
 
     if (error) {
+      // Handle "Auth session missing" error gracefully
+      if (error.message.includes("Auth session missing")) {
+        const info: SessionInfo = {
+          status: "unauthenticated",
+          lastChecked: new Date(),
+        }
+        storeSessionInfo(info)
+        return info
+      }
+
       const info: SessionInfo = {
         status: "error",
         error: error.message,

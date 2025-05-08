@@ -30,6 +30,7 @@ type AuthContextType = {
   isSupabaseReady: boolean
   clearLocalSession: () => void
   isAuthenticated: boolean
+  refreshProfile: () => Promise<UserProfile | null>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -42,6 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   isSupabaseReady: false,
   clearLocalSession: () => {},
   isAuthenticated: false,
+  refreshProfile: async () => null,
 })
 
 export const useAuth = () => useContext(AuthContext)
@@ -57,6 +59,10 @@ const safeJsonParse = (str: string | null, fallback: any = null): any => {
   }
 }
 
+// Profile cache settings
+const PROFILE_CACHE_KEY = "smartpro_user_profile"
+const PROFILE_CACHE_DURATION = 5 * 60 * 1000 // 5 minutes in milliseconds
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
@@ -66,41 +72,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<Error | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [profileLastUpdated, setProfileLastUpdated] = useState<number | null>(null)
   const router = useRouter()
   const pathname = usePathname()
 
-  // Function to fetch user profile
-  const fetchUserProfile = useCallback(async (userId: string) => {
-    try {
-      if (!isSupabaseConfigured()) return null
+  // Function to fetch user profile with caching
+  const fetchUserProfile = useCallback(
+    async (userId: string, forceRefresh = false) => {
+      try {
+        if (!isSupabaseConfigured()) return null
 
-      // First try to get from localStorage for immediate display
-      const cachedProfile = safeJsonParse(localStorage.getItem("userProfile"))
-      if (cachedProfile && cachedProfile.id === userId) {
-        setProfile(cachedProfile)
-      }
+        // Check if we have a cached profile and it's still valid
+        const now = Date.now()
+        const cachedProfile = safeJsonParse(localStorage.getItem(PROFILE_CACHE_KEY))
 
-      // Then fetch fresh data from the server
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+        if (
+          !forceRefresh &&
+          cachedProfile &&
+          cachedProfile.id === userId &&
+          profileLastUpdated &&
+          now - profileLastUpdated < PROFILE_CACHE_DURATION
+        ) {
+          setProfile(cachedProfile)
+          return cachedProfile
+        }
 
-      if (error) {
-        console.error("Error fetching user profile:", error)
+        // Fetch fresh data from the server
+        const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+
+        if (error) {
+          console.error("Error fetching user profile:", error)
+          return cachedProfile || null
+        }
+
+        if (data) {
+          // Store profile in state and localStorage
+          setProfile(data)
+          localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(data))
+          setProfileLastUpdated(now)
+          return data
+        }
+
         return cachedProfile || null
+      } catch (error) {
+        console.error("Exception fetching user profile:", error)
+        return null
       }
+    },
+    [profileLastUpdated],
+  )
 
-      if (data) {
-        // Store profile in state and localStorage
-        setProfile(data)
-        localStorage.setItem("userProfile", JSON.stringify(data))
-        return data
-      }
-
-      return cachedProfile || null
-    } catch (error) {
-      console.error("Exception fetching user profile:", error)
-      return null
-    }
-  }, [])
+  // Function to refresh profile data
+  const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
+    if (!user?.id) return null
+    return await fetchUserProfile(user.id, true)
+  }, [user, fetchUserProfile])
 
   // Function to clear local session data
   const clearLocalSession = useCallback(() => {
@@ -109,12 +135,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null)
       setProfile(null)
       setIsAuthenticated(false)
+      setProfileLastUpdated(null)
 
       // Clear any local storage items related to auth
       if (typeof window !== "undefined") {
         try {
           // Clear Supabase items from localStorage
-          localStorage.removeItem("userProfile")
+          localStorage.removeItem(PROFILE_CACHE_KEY)
+          localStorage.removeItem("profileLastUpdated")
 
           const localStorageKeys = Object.keys(localStorage)
           const supabaseKeys = localStorageKeys.filter(
@@ -143,21 +171,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
+      // First check if we have a session before trying to refresh
+      const { data: sessionData } = await supabase.auth.getSession()
+
+      if (!sessionData.session) {
+        console.log("No active session to refresh")
+        setIsAuthenticated(false)
+        setIsRefreshing(false)
+
+        // Don't show an error toast here, just return
+        return
+      }
+
       console.log("Refreshing session...")
       const { data, error } = await supabase.auth.refreshSession()
 
       if (error) {
         console.error("Error refreshing session:", error)
-        setAuthError(error)
 
-        // Only clear session if it's an expired session error
-        if (error.message.includes("expired") || error.message.includes("invalid")) {
+        // Handle "Auth session missing" error gracefully
+        if (error.message.includes("Auth session missing")) {
+          console.log("No auth session found, user is not logged in")
+          setIsAuthenticated(false)
+          clearLocalSession()
+
+          // Don't set this as an error state
+          setAuthError(null)
+        } else if (error.message.includes("expired") || error.message.includes("invalid")) {
+          // Only clear session if it's an expired session error
           clearLocalSession()
           toast({
             title: "Session expired",
             description: "Your session has expired. Please sign in again.",
             variant: "destructive",
           })
+          setAuthError(error)
+        } else {
+          setAuthError(error)
         }
 
         setIsLoading(false)
@@ -174,12 +224,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Fetch user profile if session exists
       if (data.session?.user?.id) {
         await fetchUserProfile(data.session.user.id)
-      } else {
-        toast({
-          title: "Session refresh failed",
-          description: "No session found. Please sign in again.",
-          variant: "destructive",
-        })
       }
     } catch (error) {
       console.error("Exception refreshing session:", error)
@@ -282,9 +326,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Try to load profile from localStorage first for faster rendering
       if (typeof window !== "undefined") {
-        const cachedProfile = safeJsonParse(localStorage.getItem("userProfile"))
+        const cachedProfile = safeJsonParse(localStorage.getItem(PROFILE_CACHE_KEY))
         if (cachedProfile) {
           setProfile(cachedProfile)
+          setProfileLastUpdated(Number.parseInt(localStorage.getItem("profileLastUpdated") || "0", 10) || null)
         }
       }
 
@@ -398,8 +443,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearLocalSession, fetchUserProfile])
 
+  // Save profile last updated timestamp to localStorage
+  useEffect(() => {
+    if (profileLastUpdated) {
+      localStorage.setItem("profileLastUpdated", profileLastUpdated.toString())
+    }
+  }, [profileLastUpdated])
+
   // Render auth error UI if there's an error
-  if (authError && !isLoading && authError.message !== "Auth session missing!") {
+  if (authError && !isLoading && !authError.message.includes("Auth session missing")) {
     return (
       <div className="container mx-auto py-8">
         <Alert variant="destructive" className="mb-4">
@@ -441,6 +493,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSupabaseReady,
         clearLocalSession,
         isAuthenticated,
+        refreshProfile,
       }}
     >
       {children}

@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     // Get user profile
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role, full_name, email")
+      .select("role, full_name, email, avatar_url")
       .eq("id", session.user.id)
       .single()
 
@@ -49,11 +49,14 @@ export async function GET(request: Request) {
       user: {
         id: session.user.id,
         email: session.user.email,
-        role: profile?.role || null,
-        name: profile?.full_name || null,
+        role: profile?.role || session.user.user_metadata?.role || null,
+        name: profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || null,
+        avatar_url:
+          profile?.avatar_url || session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture || null,
       },
       session: {
         expires: new Date(session.expires_at! * 1000).toISOString(),
+        expiresIn: session.expires_in,
       },
     })
   } catch (error) {
