@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS bookings (
   booking_date DATE NOT NULL,
   start_time TIME NOT NULL,
   end_time TIME NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending, confirmed, cancelled, completed
+  status VARCHAR(50) NOT NULL DEFAULT 'pending',
   service_name VARCHAR(255) NOT NULL,
-  service_fee DECIMAL(10, 2),
+  service_fee DECIMAL(10, 2) NOT NULL,
   location VARCHAR(255),
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -36,32 +36,40 @@ CREATE TABLE IF NOT EXISTS bookings (
 );
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_bookings_provider_id ON bookings(provider_id);
-CREATE INDEX IF NOT EXISTS idx_bookings_client_id ON bookings(client_id);
-CREATE INDEX IF NOT EXISTS idx_bookings_service_id ON bookings(service_id);
+CREATE INDEX IF NOT EXISTS bookings_provider_id_idx ON bookings(provider_id);
+CREATE INDEX IF NOT EXISTS bookings_client_id_idx ON bookings(client_id);
+CREATE INDEX IF NOT EXISTS bookings_service_id_idx ON bookings(service_id);
+CREATE INDEX IF NOT EXISTS bookings_date_idx ON bookings(booking_date);
+CREATE INDEX IF NOT EXISTS bookings_status_idx ON bookings(status);
 
--- Note: RLS policies have been removed as they require the Supabase auth schema
--- Access control will be handled at the application level instead
+-- Enable Row Level Security
+ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
       `
     }
 
-    // Split the SQL content into individual statements
-    const statements = sqlContent.split(";").filter((stmt) => stmt.trim() !== "")
+    // Execute each SQL statement separately
+    const statements = sqlContent
+      .split(";")
+      .map((stmt) => stmt.trim())
+      .filter((stmt) => stmt.length > 0)
+      .map((stmt) => stmt + ";")
 
-    // Execute each statement separately
     const results = []
+
     for (const statement of statements) {
       try {
         await sql.query(statement)
-        results.push({ success: true, statement: statement.substring(0, 50) + "..." })
+        results.push({
+          success: true,
+          statement: statement.length > 50 ? statement.substring(0, 50) + "..." : statement,
+        })
       } catch (error: any) {
-        console.error(`Error executing statement: ${statement.substring(0, 100)}...`, error)
+        console.error(`Error executing statement: ${statement}`, error)
         results.push({
           success: false,
-          statement: statement.substring(0, 50) + "...",
+          statement: statement.length > 50 ? statement.substring(0, 50) + "..." : statement,
           error: error.message,
         })
-        // Continue with other statements even if one fails
       }
     }
 

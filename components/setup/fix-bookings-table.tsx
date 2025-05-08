@@ -3,143 +3,97 @@
 import { useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { CardFooter } from "@/components/ui/card"
-import { AlertCircle, CheckCircle, Loader2 } from "lucide-react"
+import { CardFooter, Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { AlertCircle, CheckCircle, Loader2, Info, RefreshCw } from "lucide-react"
 
-// Make all props optional with default values
 export function FixBookingsTable() {
   const [isFixing, setIsFixing] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<any>(null)
 
-  // Add state for seeding
-  const [isSeeding, setIsSeeding] = useState(false)
-  const [isSeedingSuccess, setIsSeedingSuccess] = useState(false)
-  const [seedingError, setSeedingError] = useState<string | null>(null)
-
-  // Implement fixBookingsTable function directly in the component
-  const fixBookingsTable = async () => {
+  // Complete fix function
+  const fixBookingsComplete = async () => {
     try {
       setIsFixing(true)
       setError(null)
+      setResult(null)
 
-      const response = await fetch("/api/setup/database/fix-bookings-table", {
+      const response = await fetch("/api/setup/database/fix-bookings-complete", {
         method: "POST",
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `HTTP error ${response.status}`)
+        throw new Error(data.error || `HTTP error ${response.status}`)
       }
 
-      const data = await response.json()
       setIsSuccess(true)
+      setResult(data)
     } catch (error: any) {
-      console.error("Error creating bookings table:", error)
+      console.error("Error fixing bookings:", error)
       setError(error.message || "An unexpected error occurred")
     } finally {
       setIsFixing(false)
     }
   }
 
-  // Add seedBookings function
-  const seedBookings = async () => {
-    try {
-      setIsSeeding(true)
-      setSeedingError(null)
-
-      const response = await fetch("/api/setup/database/seed-bookings", {
-        method: "POST",
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `HTTP error ${response.status}`)
-      }
-
-      const data = await response.json()
-      setIsSeedingSuccess(true)
-    } catch (error: any) {
-      console.error("Error seeding bookings:", error)
-      setSeedingError(error.message || "An unexpected error occurred")
-    } finally {
-      setIsSeeding(false)
-    }
-  }
-
   return (
-    <>
-      {isSuccess && (
-        <Alert className="mb-4 border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertTitle className="text-green-800">Bookings Table Created</AlertTitle>
-          <AlertDescription className="text-green-700">
-            The bookings table has been successfully created in the database.
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Bookings Table Setup</CardTitle>
+        <CardDescription>Create the bookings table and add sample data for testing</CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {isSuccess && (
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertTitle className="text-green-800">Bookings Table Created</AlertTitle>
+            <AlertDescription className="text-green-700">
+              {result?.bookingsCreated
+                ? `The bookings table has been created and ${result.count} sample bookings have been added.`
+                : "The bookings table has been created successfully."}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error Setting Up Bookings</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <Alert className="bg-blue-50 border-blue-200">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800">Complete Setup</AlertTitle>
+          <AlertDescription className="text-blue-700">
+            This will drop and recreate the bookings table, then add sample data in a single operation. Any existing
+            bookings data will be lost.
           </AlertDescription>
         </Alert>
-      )}
+      </CardContent>
 
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error Creating Bookings Table</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {isSeedingSuccess && (
-        <Alert className="mb-4 border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertTitle className="text-green-800">Sample Bookings Added</AlertTitle>
-          <AlertDescription className="text-green-700">
-            Sample booking data has been added to the database for testing.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {seedingError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error Adding Sample Data</AlertTitle>
-          <AlertDescription>{seedingError}</AlertDescription>
-        </Alert>
-      )}
-
-      <CardFooter className="flex justify-between">
-        <Button onClick={fixBookingsTable} disabled={isFixing} className="bg-blue-600 hover:bg-blue-700">
+      <CardFooter className="flex justify-center">
+        <Button onClick={fixBookingsComplete} disabled={isFixing} className="bg-blue-600 hover:bg-blue-700">
           {isFixing ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creating Bookings Table...
+              Setting Up Bookings...
             </>
           ) : isSuccess ? (
             <>
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Bookings Table Created
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Recreate Bookings Table
             </>
           ) : (
-            "Create Bookings Table"
+            "Complete Bookings Setup"
           )}
         </Button>
-
-        {isSuccess && (
-          <Button onClick={seedBookings} disabled={isSeeding || isSeedingSuccess} variant="outline">
-            {isSeeding ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Adding Sample Data...
-              </>
-            ) : isSeedingSuccess ? (
-              <>
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Sample Data Added
-              </>
-            ) : (
-              "Add Sample Bookings"
-            )}
-          </Button>
-        )}
       </CardFooter>
-    </>
+    </Card>
   )
 }
