@@ -2,88 +2,76 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { Upload, X, FileText, Check } from "lucide-react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
-import { cn } from "@/lib/utils"
+import { Upload, X, FileText, Check, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface FileUploadProps {
-  onUpload: (url: string, fileName: string) => void
-  accept?: string
-  maxSize?: number // in MB
+  onUploadComplete?: (fileUrl: string, fileData: any) => void
+  acceptedFileTypes?: string
+  maxSizeMB?: number
+  buttonText?: string
   className?: string
 }
 
-export function FileUpload({ onUpload, accept = "application/pdf,image/*", maxSize = 5, className }: FileUploadProps) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
+export function FileUpload({
+  onUploadComplete,
+  acceptedFileTypes = ".pdf,.doc,.docx,.txt",
+  maxSizeMB = 10,
+  buttonText = "Upload File",
+  className = "",
+}: FileUploadProps) {
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [fileName, setFileName] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = () => {
-    setIsDragging(false)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0])
-    }
-  }
+  const maxSizeBytes = maxSizeMB * 1024 * 1024
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleFile(e.target.files[0])
-    }
-  }
-
-  const handleFile = async (file: File) => {
-    // Reset states
+    const selectedFile = e.target.files?.[0]
     setError(null)
-    setFileName(file.name)
+    setSuccess(false)
 
-    // Validate file type
-    if (!file.type.match(accept.replace(/,/g, "|").replace(/\*/g, ".*"))) {
-      setError(`Invalid file type. Please upload ${accept.split(",").join(" or ")}`)
-      return
-    }
+    if (!selectedFile) return
 
     // Validate file size
-    if (file.size > maxSize * 1024 * 1024) {
-      setError(`File too large. Maximum size is ${maxSize}MB`)
+    if (selectedFile.size > maxSizeBytes) {
+      setError(`File size exceeds the maximum limit of ${maxSizeMB}MB`)
       return
     }
 
-    // Start upload
-    setIsUploading(true)
+    setFile(selectedFile)
+  }
+
+  const handleUpload = async () => {
+    if (!file) return
+
+    setUploading(true)
     setProgress(0)
+    setError(null)
+    setSuccess(false)
 
     try {
       // Create form data
       const formData = new FormData()
       formData.append("file", file)
 
-      // Simulate progress (in a real app, you'd get this from your upload API)
+      // Simulate progress updates
       const progressInterval = setInterval(() => {
         setProgress((prev) => {
-          if (prev >= 95) {
-            clearInterval(progressInterval)
-            return 95
-          }
-          return prev + 5
+          const newProgress = Math.min(prev + 5, 90)
+          return newProgress
         })
       }, 100)
 
-      // Upload to Blob
+      // Upload file to Vercel Blob
       const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
@@ -92,101 +80,104 @@ export function FileUpload({ onUpload, accept = "application/pdf,image/*", maxSi
       clearInterval(progressInterval)
 
       if (!response.ok) {
-        throw new Error("Upload failed")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to upload file")
       }
 
-      const data = await response.json()
       setProgress(100)
+      setSuccess(true)
 
-      // Call the onUpload callback with the URL
-      onUpload(data.url, file.name)
+      const data = await response.json()
 
-      // Reset after a short delay
-      setTimeout(() => {
-        setIsUploading(false)
-        setProgress(0)
-      }, 1000)
+      if (onUploadComplete) {
+        onUploadComplete(data.url, data)
+      }
     } catch (err: any) {
-      setError(err.message || "Upload failed")
-      setIsUploading(false)
+      setError(err.message || "An error occurred during upload")
+      setProgress(0)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const resetUpload = () => {
+    setFile(null)
+    setProgress(0)
+    setError(null)
+    setSuccess(false)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
     }
   }
 
   return (
-    <div
-      className={cn(
-        "relative rounded-lg border-2 border-dashed border-gray-300 p-6 transition-all",
-        isDragging && "border-primary bg-primary/5",
-        isUploading && "border-primary",
-        className,
-      )}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <input
-        type="file"
-        id="file-upload"
-        className="sr-only"
-        onChange={handleFileChange}
-        accept={accept}
-        disabled={isUploading}
-      />
-
-      <div className="flex flex-col items-center justify-center space-y-3 text-center">
-        {isUploading ? (
-          <>
-            <div className="rounded-full bg-primary/10 p-3">
-              <FileText className="h-6 w-6 text-primary" />
+    <div className={`space-y-4 ${className}`}>
+      {!file ? (
+        <div className="space-y-2">
+          <Label htmlFor="file-upload">Select a file to upload</Label>
+          <Input
+            ref={fileInputRef}
+            id="file-upload"
+            type="file"
+            accept={acceptedFileTypes}
+            onChange={handleFileChange}
+            className="cursor-pointer"
+          />
+          <p className="text-xs text-muted-foreground">
+            Accepted file types: {acceptedFileTypes.replace(/\./g, "").replace(/,/g, ", ")}. Maximum size: {maxSizeMB}MB
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <FileText className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium truncate max-w-[200px]">{file.name}</span>
+              <span className="text-xs text-muted-foreground">({(file.size / 1024 / 1024).toFixed(2)}MB)</span>
             </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{fileName}</p>
-              <Progress value={progress} className="h-2 w-full max-w-xs" />
-              <p className="text-xs text-muted-foreground">{progress}% uploaded</p>
-            </div>
-          </>
-        ) : progress === 100 ? (
-          <>
-            <div className="rounded-full bg-green-100 p-3">
-              <Check className="h-6 w-6 text-green-600" />
-            </div>
-            <div>
-              <p className="font-medium">Upload complete!</p>
-              <p className="text-sm text-muted-foreground">{fileName}</p>
-            </div>
-            <label htmlFor="file-upload">
-              <Button variant="outline" size="sm" className="mt-2">
-                Upload another
-              </Button>
-            </label>
-          </>
-        ) : (
-          <>
-            <div className="rounded-full bg-primary/10 p-3">
-              <Upload className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <p className="font-medium">Drag and drop your file here</p>
-              <p className="text-sm text-muted-foreground">or click to browse</p>
-            </div>
-            <label htmlFor="file-upload">
-              <Button variant="outline" size="sm">
-                Select file
-              </Button>
-            </label>
-            <p className="text-xs text-muted-foreground">
-              Max file size: {maxSize}MB. Supported formats: {accept.split(",").join(", ")}
-            </p>
-          </>
-        )}
-
-        {error && (
-          <div className="mt-2 flex items-center text-sm text-red-500">
-            <X className="mr-1 h-4 w-4" />
-            {error}
+            <Button variant="ghost" size="icon" onClick={resetUpload} disabled={uploading}>
+              <X className="h-4 w-4" />
+              <span className="sr-only">Remove file</span>
+            </Button>
           </div>
-        )}
-      </div>
+
+          {uploading && (
+            <div className="space-y-2">
+              <Progress value={progress} className="h-2" />
+              <p className="text-xs text-center text-muted-foreground">Uploading... {progress}%</p>
+            </div>
+          )}
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {success && (
+            <Alert className="bg-green-50 border-green-200">
+              <Check className="h-4 w-4 text-green-600" />
+              <AlertTitle className="text-green-800">Success</AlertTitle>
+              <AlertDescription className="text-green-700">File uploaded successfully!</AlertDescription>
+            </Alert>
+          )}
+
+          {!uploading && !success && (
+            <Button onClick={handleUpload} className="w-full">
+              <Upload className="mr-2 h-4 w-4" />
+              {buttonText}
+            </Button>
+          )}
+
+          {success && (
+            <Button variant="outline" onClick={resetUpload} className="w-full">
+              Upload Another File
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

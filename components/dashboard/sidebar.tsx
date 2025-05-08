@@ -5,7 +5,20 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth/auth-provider"
-import { BarChart3, Calendar, FileText, Home, MessageSquare, Settings, Users, LogOut, Clock, User } from "lucide-react"
+import {
+  BarChart3,
+  Calendar,
+  FileText,
+  Home,
+  MessageSquare,
+  Settings,
+  Users,
+  LogOut,
+  Clock,
+  User,
+  Bug,
+} from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 const routes = [
   {
@@ -64,6 +77,12 @@ const routes = [
     href: "/dashboard/settings",
     color: "text-gray-500",
   },
+  {
+    label: "Debug",
+    href: "/debug/supabase",
+    icon: Bug,
+    color: "text-red-500",
+  },
 ]
 
 export function Sidebar() {
@@ -72,12 +91,17 @@ export function Sidebar() {
   const isAdmin = user?.email === "admin@example.com" // This should be replaced with a proper role check
 
   return (
-    <div className="space-y-4 py-4 flex flex-col h-full bg-gray-900 text-white">
-      <div className="px-3 py-2 flex-1">
-        <Link href="/dashboard" className="flex items-center pl-3 mb-10">
-          <h1 className="text-2xl font-bold">SmartPRO</h1>
+    <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
+      <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+        <Link href="/dashboard" className="flex items-center">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-500 bg-clip-text text-transparent">
+            SmartPRO
+          </h1>
         </Link>
-        <div className="space-y-1">
+      </div>
+
+      <ScrollArea className="flex-1 py-2">
+        <div className="px-3 space-y-1">
           {routes.map((route) => {
             if (route.admin && !isAdmin) return null
 
@@ -86,23 +110,24 @@ export function Sidebar() {
                 key={route.href}
                 href={route.href}
                 className={cn(
-                  "text-sm group flex p-3 w-full justify-start font-medium cursor-pointer hover:text-white hover:bg-gray-800/50 rounded-lg transition",
-                  pathname === route.href ? "text-white bg-gray-800" : "text-zinc-400",
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800",
+                  pathname === route.href
+                    ? "text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800"
+                    : "text-gray-500 dark:text-gray-400",
                 )}
               >
-                <div className="flex items-center flex-1">
-                  <route.icon className={cn("h-5 w-5 mr-3", route.color)} />
-                  {route.label}
-                </div>
+                <route.icon className={cn("h-5 w-5", route.color)} />
+                <span>{route.label}</span>
               </Link>
             )
           })}
         </div>
-      </div>
-      <div className="px-3 py-2">
+      </ScrollArea>
+
+      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
         <Button
           variant="ghost"
-          className="w-full justify-start text-zinc-400 hover:text-white hover:bg-gray-800/50"
+          className="w-full justify-start text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
           onClick={() => signOut()}
         >
           <LogOut className="h-5 w-5 mr-3 text-red-500" />

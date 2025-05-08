@@ -19,39 +19,30 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     try {
+      // Create a new cookie store and supabase client for this request
       const cookieStore = cookies()
       const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-      await supabase.auth.exchangeCodeForSession(code)
 
-      // Get the user to determine where to redirect
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      // Exchange the code for a session
+      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
 
-      if (user) {
-        // Get the user's role from the profile
-        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
-
-        // Determine redirect based on role
-        if (profile?.role) {
-          switch (profile.role) {
-            case "admin":
-              return NextResponse.redirect(new URL("/admin/dashboard", request.url))
-            case "provider":
-              return NextResponse.redirect(new URL("/provider/dashboard", request.url))
-            case "client":
-              return NextResponse.redirect(new URL("/client/dashboard", request.url))
-          }
-        }
+      if (sessionError) {
+        console.error("Error exchanging code for session:", sessionError)
+        const redirectUrl = new URL("/auth/debug", request.url)
+        redirectUrl.searchParams.set("error", "session_exchange_failed")
+        return NextResponse.redirect(redirectUrl)
       }
+
+      // Redirect to dashboard
+      return NextResponse.redirect(new URL("/dashboard", request.url))
     } catch (err) {
-      console.error("Error exchanging code for session:", err)
-      const redirectUrl = new URL("/auth/login", request.url)
-      redirectUrl.searchParams.set("error", "Failed to complete authentication")
+      console.error("Error in auth callback:", err)
+      const redirectUrl = new URL("/auth/debug", request.url)
+      redirectUrl.searchParams.set("error", "callback_exception")
       return NextResponse.redirect(redirectUrl)
     }
   }
 
-  // Default URL to redirect to after sign in process completes
-  return NextResponse.redirect(new URL("/dashboard", request.url))
+  // If no code is present, redirect to login
+  return NextResponse.redirect(new URL("/auth/login", request.url))
 }

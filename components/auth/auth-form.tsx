@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
@@ -14,6 +13,7 @@ import { Loader2, AlertTriangle } from "lucide-react"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import Link from "next/link"
 import type { UserRole } from "@/lib/supabase/database.types"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 type AuthFormProps = {
   type?: "login" | "register"
@@ -133,155 +133,181 @@ function AuthForm({ type = "login" }: AuthFormProps) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full">
-      {/* Display error from URL parameter if present */}
-      {errorParam && (
-        <Alert variant="destructive" className="mb-4 max-w-md">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{decodeURIComponent(errorParam)}</AlertDescription>
-        </Alert>
-      )}
+    <div className="flex min-h-[100vh] w-full items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-md">
+        {/* Display error from URL parameter if present */}
+        {errorParam && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            <AlertDescription>{decodeURIComponent(errorParam)}</AlertDescription>
+          </Alert>
+        )}
 
-      {/* Display redirectedFrom message if present */}
-      {redirectedFrom && redirectedFrom !== "/dashboard" && (
-        <Alert className="mb-4 max-w-md">
-          <AlertDescription>You need to sign in to access {decodeURIComponent(redirectedFrom)}</AlertDescription>
-        </Alert>
-      )}
+        {/* Display redirectedFrom message if present */}
+        {redirectedFrom && redirectedFrom !== "/dashboard" && (
+          <Alert className="mb-4">
+            <AlertDescription>You need to sign in to access {decodeURIComponent(redirectedFrom)}</AlertDescription>
+          </Alert>
+        )}
 
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">SmartPRO</CardTitle>
-          <CardDescription className="text-center">Business Services Hub</CardDescription>
-        </CardHeader>
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "login" | "register")}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Login</TabsTrigger>
-            <TabsTrigger value="register">Register</TabsTrigger>
-          </TabsList>
-          <TabsContent value="login">
-            <form onSubmit={handleLogin}>
-              <CardContent className="space-y-4 pt-4">
-                {message && (
-                  <Alert variant={message.type === "error" ? "destructive" : "default"}>
-                    <AlertDescription>{message.text}</AlertDescription>
-                  </Alert>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="name@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password">Password</Label>
-                    <Link href="/auth/reset-password" className="text-sm text-blue-600 hover:underline">
-                      Forgot password?
-                    </Link>
+        <Card className="w-full shadow-lg border border-gray-200">
+          <CardHeader className="space-y-1 pb-6">
+            <CardTitle className="text-2xl font-bold text-center">SmartPRO</CardTitle>
+            <CardDescription className="text-center text-base">Business Services Hub</CardDescription>
+          </CardHeader>
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as "login" | "register")}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="login" className="text-sm font-medium">
+                Login
+              </TabsTrigger>
+              <TabsTrigger value="register" className="text-sm font-medium">
+                Register
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="login" className="mt-0">
+              <form onSubmit={handleLogin}>
+                <CardContent className="space-y-4 pt-0">
+                  {message && (
+                    <Alert variant={message.type === "error" ? "destructive" : "default"}>
+                      <AlertDescription>{message.text}</AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm font-medium">
+                      Email
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="name@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="h-10"
+                    />
                   </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait
-                    </>
-                  ) : (
-                    "Sign In"
-                  )}
-                </Button>
-              </CardFooter>
-            </form>
-          </TabsContent>
-          <TabsContent value="register">
-            <form onSubmit={handleRegister}>
-              <CardContent className="space-y-4 pt-4">
-                {message && (
-                  <Alert variant={message.type === "error" ? "destructive" : "default"}>
-                    <AlertDescription>{message.text}</AlertDescription>
-                  </Alert>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input
-                    id="fullName"
-                    placeholder="John Doe"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="name@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>I am a:</Label>
-                  <RadioGroup value={role} onValueChange={(value) => setRole(value as UserRole)}>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="client" id="client" />
-                      <Label htmlFor="client">Client looking for services</Label>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password" className="text-sm font-medium">
+                        Password
+                      </Label>
+                      <Link href="/auth/reset-password" className="text-sm text-blue-600 hover:underline">
+                        Forgot password?
+                      </Link>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="provider" id="provider" />
-                      <Label htmlFor="provider">Service Provider</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait
-                    </>
-                  ) : (
-                    "Create Account"
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="h-10"
+                    />
+                  </div>
+                </CardContent>
+                <CardFooter className="pt-4">
+                  <Button type="submit" className="w-full h-10" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait
+                      </>
+                    ) : (
+                      "Sign In"
+                    )}
+                  </Button>
+                </CardFooter>
+              </form>
+            </TabsContent>
+            <TabsContent value="register" className="mt-0">
+              <form onSubmit={handleRegister}>
+                <CardContent className="space-y-4 pt-0">
+                  {message && (
+                    <Alert variant={message.type === "error" ? "destructive" : "default"}>
+                      <AlertDescription>{message.text}</AlertDescription>
+                    </Alert>
                   )}
-                </Button>
-              </CardFooter>
-            </form>
-          </TabsContent>
-        </Tabs>
-      </Card>
+                  <div className="space-y-2">
+                    <Label htmlFor="fullName" className="text-sm font-medium">
+                      Full Name
+                    </Label>
+                    <Input
+                      id="fullName"
+                      placeholder="John Doe"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm font-medium">
+                      Email
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="name@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-sm font-medium">
+                      Password
+                    </Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={6}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-2 pt-2">
+                    <Label className="text-sm font-medium">I am a:</Label>
+                    <RadioGroup value={role} onValueChange={(value) => setRole(value as UserRole)} className="pt-2">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <RadioGroupItem value="client" id="client" />
+                        <Label htmlFor="client" className="text-sm font-normal">
+                          Client looking for services
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="provider" id="provider" />
+                        <Label htmlFor="provider" className="text-sm font-normal">
+                          Service Provider
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                </CardContent>
+                <CardFooter className="pt-4">
+                  <Button type="submit" className="w-full h-10" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait
+                      </>
+                    ) : (
+                      "Create Account"
+                    )}
+                  </Button>
+                </CardFooter>
+              </form>
+            </TabsContent>
+          </Tabs>
+        </Card>
+      </div>
     </div>
   )
 }
-
-// Make sure to include the Tabs import
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Export as default
 export default AuthForm

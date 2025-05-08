@@ -126,12 +126,48 @@ CREATE POLICY "Users can send messages"
   ON messages FOR INSERT
   WITH CHECK (auth.uid() = sender_id);
 
+-- Add indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_service_id ON bookings(service_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_user_id ON contracts(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_messages_recipient_id ON messages(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_provider_id ON profiles(provider_id);
+
+-- Add cascade delete for related tables
+ALTER TABLE bookings 
+  DROP CONSTRAINT IF EXISTS bookings_user_id_fkey,
+  ADD CONSTRAINT bookings_user_id_fkey 
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
+
+ALTER TABLE contracts 
+  DROP CONSTRAINT IF EXISTS contracts_user_id_fkey,
+  ADD CONSTRAINT contracts_user_id_fkey 
+  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
+
 -- Create function to handle new user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, full_name, avatar_url, email, role)
-  VALUES (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url', new.email, 'user');
+  INSERT INTO public.profiles (
+    id, 
+    full_name, 
+    email, 
+    role,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', ''),
+    new.email, 
+    COALESCE(new.raw_user_meta_data->>'role', 'client'),
+    NOW(),
+    NOW()
+  )
+  ON CONFLICT (id) DO NOTHING;
+  
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

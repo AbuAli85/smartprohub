@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { CalendarDateRangePicker } from "@/components/dashboard/date-range-picker"
 import { Overview } from "@/components/dashboard/overview"
 import { RecentBookings } from "@/components/dashboard/recent-bookings"
+import { SignOutButton } from "@/components/auth/sign-out-button"
+import Link from "next/link"
 
 export default function AdminDashboardPage() {
   return (
@@ -14,8 +16,9 @@ export default function AdminDashboardPage() {
         <div className="flex items-center gap-2">
           <CalendarDateRangePicker />
           <Button size="sm" variant="outline">
-            Export Data
+            <Link href="/auth/debug">Debug Auth</Link>
           </Button>
+          <SignOutButton />
         </div>
       </div>
       <Tabs defaultValue="overview" className="space-y-4">

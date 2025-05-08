@@ -3,87 +3,148 @@
 import { revalidatePath } from "next/cache"
 import { supabase } from "@/lib/supabase/client"
 
+// Define types for booking data
+interface BookingData {
+  provider_id: string
+  client_id: string
+  service_id: string
+  booking_date: string
+  start_time: string
+  end_time: string
+  status: string
+  notes?: string
+}
+
+/**
+ * Create a new booking
+ */
 export async function createBooking(formData: FormData) {
-  const userId = formData.get("userId") as string
-  const serviceId = formData.get("serviceId") as string
-  const date = formData.get("date") as string
-  const time = formData.get("time") as string
-  const notes = formData.get("notes") as string
-
   try {
-    const { error } = await supabase.from("bookings").insert({
-      user_id: userId,
-      service_id: serviceId,
-      date,
-      time,
-      notes,
-      status: "pending",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    // Extract data from form
+    const provider_id = formData.get("provider_id") as string
+    const client_id = formData.get("client_id") as string
+    const service_id = formData.get("service_id") as string
+    const booking_date = formData.get("booking_date") as string
+    const start_time = formData.get("start_time") as string
+    const end_time = formData.get("end_time") as string
+    const notes = formData.get("notes") as string
 
-    if (error) {
-      return { success: false, error: error.message }
+    // Validate required fields
+    if (!provider_id || !client_id || !service_id || !booking_date || !start_time || !end_time) {
+      return { error: "Missing required fields" }
     }
 
-    revalidatePath("/dashboard/bookings")
-    return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
-  }
-}
-
-export async function updateBookingStatus(formData: FormData) {
-  const id = formData.get("id") as string
-  const status = formData.get("status") as "pending" | "confirmed" | "cancelled"
-
-  try {
-    const { error } = await supabase
+    // Create booking in database
+    const { data, error } = await supabase
       .from("bookings")
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
+      .insert({
+        provider_id,
+        client_id,
+        service_id,
+        booking_date,
+        start_time,
+        end_time,
+        status: "pending",
+        notes: notes || null,
       })
-      .eq("id", id)
+      .select()
 
     if (error) {
-      return { success: false, error: error.message }
+      console.error("Error creating booking:", error)
+      return { error: error.message }
     }
 
+    // Revalidate the bookings page to show the new booking
     revalidatePath("/dashboard/bookings")
-    return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("Error in createBooking:", error)
+    return { error: "Failed to create booking" }
   }
 }
 
-export async function deleteBooking(formData: FormData) {
-  const id = formData.get("id") as string
-
+/**
+ * Update a booking status
+ */
+export async function updateBookingStatus(formData: FormData) {
   try {
+    const id = formData.get("id") as string
+    const status = formData.get("status") as string
+
+    if (!id || !status) {
+      return { error: "Missing booking ID or status" }
+    }
+
+    const { data, error } = await supabase.from("bookings").update({ status }).eq("id", id).select()
+
+    if (error) {
+      console.error("Error updating booking status:", error)
+      return { error: error.message }
+    }
+
+    revalidatePath("/dashboard/bookings")
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("Error in updateBookingStatus:", error)
+    return { error: "Failed to update booking status" }
+  }
+}
+
+/**
+ * Delete a booking
+ */
+export async function deleteBooking(formData: FormData) {
+  try {
+    const id = formData.get("id") as string
+
+    if (!id) {
+      return { error: "Missing booking ID" }
+    }
+
     const { error } = await supabase.from("bookings").delete().eq("id", id)
 
     if (error) {
-      return { success: false, error: error.message }
+      console.error("Error deleting booking:", error)
+      return { error: error.message }
     }
 
     revalidatePath("/dashboard/bookings")
+
     return { success: true }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+  } catch (error) {
+    console.error("Error in deleteBooking:", error)
+    return { error: "Failed to delete booking" }
   }
 }
 
-export async function getAvailableTimeSlots(date: string, serviceId: string) {
+/**
+ * Get bookings for a specific user (either as provider or client)
+ */
+export async function getUserBookings(userId: string, role: "provider" | "client") {
   try {
-    // This would typically query your database to find available time slots
-    // based on service provider availability and existing bookings
+    const column = role === "provider" ? "provider_id" : "client_id"
 
-    // For demo purposes, we'll return mock data
-    const mockTimeSlots = ["09:00 AM", "10:00 AM", "11:00 AM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM"]
+    const { data, error } = await supabase
+      .from("bookings")
+      .select(`
+        *,
+        services:service_id (name, description, price, duration),
+        providers:provider_id (id, email, first_name, last_name),
+        clients:client_id (id, email, first_name, last_name)
+      `)
+      .eq(column, userId)
+      .order("booking_date", { ascending: false })
 
-    return { success: true, timeSlots: mockTimeSlots }
-  } catch (error: any) {
-    return { success: false, error: error.message }
+    if (error) {
+      console.error("Error fetching user bookings:", error)
+      return { error: error.message }
+    }
+
+    return { data }
+  } catch (error) {
+    console.error("Error in getUserBookings:", error)
+    return { error: "Failed to fetch bookings" }
   }
 }

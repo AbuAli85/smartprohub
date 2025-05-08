@@ -10,6 +10,7 @@ import { Header } from "@/components/dashboard/header"
 import { Toaster } from "@/components/ui/toaster"
 import { Loader2 } from "lucide-react"
 import type { UserRole } from "@/lib/supabase/database.types"
+import { Sidebar } from "@/components/dashboard/sidebar"
 
 interface RoleBasedLayoutProps {
   children: React.ReactNode
@@ -19,6 +20,7 @@ interface RoleBasedLayoutProps {
 export function RoleBasedLayout({ children, allowedRoles }: RoleBasedLayoutProps) {
   const { isLoading, isAuthorized, userRole } = useRoleAuth({
     allowedRoles,
+    redirectTo: "/auth/login",
     loadingComponent: (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -35,7 +37,8 @@ export function RoleBasedLayout({ children, allowedRoles }: RoleBasedLayoutProps
   }
 
   if (!isAuthorized) {
-    return null // The hook will handle redirection
+    // The hook will handle redirection, but we'll return null to prevent rendering
+    return null
   }
 
   // Render the appropriate sidebar based on user role
@@ -48,7 +51,7 @@ export function RoleBasedLayout({ children, allowedRoles }: RoleBasedLayoutProps
       case "client":
         return <ClientSidebar />
       default:
-        return null
+        return <Sidebar /> // Fallback to default sidebar
     }
   }
 

@@ -1,198 +1,114 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { createBooking } from "@/app/actions/booking-actions"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
 import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
-import { CalendarIcon, Loader2 } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { useAuth } from "@/components/auth/auth-provider"
-import { createBooking, getAvailableTimeSlots } from "@/app/actions/booking-actions"
-
-// Mock data for services
-const services = [
-  {
-    id: "1",
-    name: "Business Consultation",
-    description: "One-on-one business consultation session",
-    duration: 60,
-    price: 150,
-  },
-  {
-    id: "2",
-    name: "Financial Planning",
-    description: "Comprehensive financial planning session",
-    duration: 90,
-    price: 200,
-  },
-  {
-    id: "3",
-    name: "Marketing Strategy",
-    description: "Marketing strategy development session",
-    duration: 120,
-    price: 250,
-  },
-  {
-    id: "4",
-    name: "Legal Consultation",
-    description: "Legal advice and consultation",
-    duration: 60,
-    price: 180,
-  },
-]
 
 export default function NewBookingPage() {
-  const { user } = useAuth()
   const router = useRouter()
-  const [date, setDate] = useState<Date | undefined>(undefined)
-  const [service, setService] = useState<string>("")
-  const [time, setTime] = useState<string>("")
-  const [notes, setNotes] = useState<string>("")
-  const [timeSlots, setTimeSlots] = useState<string[]>([])
-  const [loading, setLoading] = useState<boolean>(false)
+  const { toast } = useToast()
+  const [date, setDate] = useState<Date | undefined>(new Date())
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleDateChange = async (date: Date | undefined) => {
-    setDate(date)
-    if (date && service) {
-      const formattedDate = format(date, "yyyy-MM-dd")
-      const result = await getAvailableTimeSlots(formattedDate, service)
-      if (result.success) {
-        setTimeSlots(result.timeSlots)
+  async function handleSubmit(formData: FormData) {
+    setIsSubmitting(true)
+
+    try {
+      // Format the date for the server action
+      if (date) {
+        formData.set("booking_date", format(date, "yyyy-MM-dd"))
       }
-    }
-  }
 
-  const handleServiceChange = async (value: string) => {
-    setService(value)
-    if (date && value) {
-      const formattedDate = format(date, "yyyy-MM-dd")
-      const result = await getAvailableTimeSlots(formattedDate, value)
-      if (result.success) {
-        setTimeSlots(result.timeSlots)
+      const result = await createBooking(formData)
+
+      if (result.error) {
+        toast({
+          title: "Error",
+          description: result.error,
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Success",
+          description: "Booking created successfully",
+        })
+        router.push("/dashboard/bookings")
       }
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!date || !service || !time) return
-
-    setLoading(true)
-    const formData = new FormData()
-    formData.append("userId", user?.id || "")
-    formData.append("serviceId", service)
-    formData.append("date", format(date, "yyyy-MM-dd"))
-    formData.append("time", time)
-    formData.append("notes", notes)
-
-    const result = await createBooking(formData)
-    setLoading(false)
-
-    if (result.success) {
-      router.push("/dashboard/bookings")
-    } else {
-      // Handle error
-      console.error(result.error)
+    } catch (error) {
+      console.error("Error creating booking:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h2 className="mb-6 text-3xl font-bold tracking-tight">New Booking</h2>
+    <div className="container mx-auto py-8">
       <Card>
         <CardHeader>
-          <CardTitle>Book a Service</CardTitle>
-          <CardDescription>Fill out the form below to schedule a new booking.</CardDescription>
+          <CardTitle>Create New Booking</CardTitle>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="service">Service</Label>
-              <Select value={service} onValueChange={handleServiceChange} required>
-                <SelectTrigger id="service">
-                  <SelectValue placeholder="Select a service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services.map((service) => (
-                    <SelectItem key={service.id} value={service.id}>
-                      {service.name} - ${service.price} ({service.duration} min)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <CardContent>
+          <form action={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="provider_id">Provider</Label>
+                <Input id="provider_id" name="provider_id" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="client_id">Client</Label>
+                <Input id="client_id" name="client_id" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="service_id">Service</Label>
+                <Input id="service_id" name="service_id" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Calendar mode="single" selected={date} onSelect={setDate} className="border rounded-md" />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="start_time">Start Time</Label>
+                <Input id="start_time" name="start_time" type="time" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="end_time">End Time</Label>
+                <Input id="end_time" name="end_time" type="time" required />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "PPP") : "Select a date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={handleDateChange}
-                    initialFocus
-                    disabled={(date) => date < new Date()}
-                  />
-                </PopoverContent>
-              </Popover>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea id="notes" name="notes" rows={4} />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="time">Time</Label>
-              <Select value={time} onValueChange={setTime} disabled={!date || !service} required>
-                <SelectTrigger id="time">
-                  <SelectValue placeholder="Select a time" />
-                </SelectTrigger>
-                <SelectContent>
-                  {timeSlots.map((slot) => (
-                    <SelectItem key={slot} value={slot}>
-                      {slot}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex justify-end space-x-4">
+              <Button type="button" variant="outline" onClick={() => router.back()}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Creating..." : "Create Booking"}
+              </Button>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Add any additional information or special requests"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={4}
-              />
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={loading || !date || !service || !time}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing
-                </>
-              ) : (
-                "Book Appointment"
-              )}
-            </Button>
-          </CardFooter>
-        </form>
+          </form>
+        </CardContent>
       </Card>
     </div>
   )
