@@ -10,10 +10,15 @@ export function getRedisClient() {
       return null
     }
 
-    redisClient = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    })
+    try {
+      redisClient = new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      })
+    } catch (error) {
+      console.error("Failed to initialize Redis client:", error)
+      return null
+    }
   }
 
   return redisClient
@@ -73,5 +78,41 @@ export async function getDashboardMetrics(userId: string): Promise<any | null> {
   } catch (error) {
     console.error("Error getting dashboard metrics:", error)
     return null
+  }
+}
+
+// Store recent events for recovery
+export async function storeEvent(userId: string, eventType: string, eventData: any): Promise<boolean> {
+  const redis = getRedisClient()
+  if (!redis) return false
+
+  try {
+    const event = {
+      id: Date.now().toString(),
+      type: eventType,
+      data: eventData,
+      timestamp: new Date().toISOString(),
+    }
+
+    await redis.lpush(`events:${userId}:recent`, JSON.stringify(event))
+    await redis.ltrim(`events:${userId}:recent`, 0, 99) // Keep last 100 events
+    return true
+  } catch (error) {
+    console.error("Error storing event:", error)
+    return false
+  }
+}
+
+// Get recent events for recovery
+export async function getRecentEvents(userId: string, limit = 100): Promise<any[]> {
+  const redis = getRedisClient()
+  if (!redis) return []
+
+  try {
+    const events = await redis.lrange(`events:${userId}:recent`, 0, limit - 1)
+    return events ? events.map((e) => JSON.parse(e as string)) : []
+  } catch (error) {
+    console.error("Error getting recent events:", error)
+    return []
   }
 }

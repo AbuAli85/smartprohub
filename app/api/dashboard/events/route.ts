@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getRedisClient } from "@/lib/redis/real-time-service"
+import { getRecentEvents } from "@/lib/redis/real-time-service"
 import { supabase } from "@/lib/supabase/client"
 
 // Helper to validate JWT token
@@ -22,30 +22,28 @@ export async function GET(request: Request) {
   const token = searchParams.get("token")
   const lastEventId = searchParams.get("lastEventId")
 
-  // Validate authentication
-  if (token) {
-    const user = await validateToken(token)
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // If no userId was provided, use the authenticated user's ID
-    if (!userId) {
-      userId = user.id as string
-    }
-
-    // Verify the user has access to the requested userId data
-    if (userId !== user.id && user.user_metadata?.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-    }
-  } else if (!userId) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+  // Validate input
+  if (!userId) {
+    return NextResponse.json({ error: "User ID is required" }, { status: 400 })
   }
 
-  // Get Redis client
-  const redis = getRedisClient()
-  if (!redis) {
-    return NextResponse.json({ error: "Redis client not available" }, { status: 500 })
+  // Validate authentication if token is provided
+  let authenticatedUserId = null
+  if (token) {
+    try {
+      const user = await validateToken(token)
+      if (user) {
+        authenticatedUserId = user.id
+
+        // Verify the user has access to the requested userId data
+        if (userId !== authenticatedUserId && user.user_metadata?.role !== "admin") {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+        }
+      }
+    } catch (error) {
+      console.error("Token validation error:", error)
+      // Continue without authentication
+    }
   }
 
   // Create a readable stream for SSE
@@ -59,27 +57,18 @@ export async function GET(request: Request) {
       // If we have a lastEventId, try to fetch missed events
       if (lastEventId) {
         try {
-          const missedEvents = await redis.lrange(`events:${userId}:missed`, 0, -1)
+          const missedEvents = await getRecentEvents(userId)
           if (missedEvents && missedEvents.length > 0) {
             for (const event of missedEvents) {
-              const parsedEvent = JSON.parse(event as string)
               controller.enqueue(
-                encoder.encode(
-                  `event: ${parsedEvent.type}\nid: ${parsedEvent.id}\ndata: ${JSON.stringify(parsedEvent.data)}\n\n`,
-                ),
+                encoder.encode(`event: ${event.type}\nid: ${event.id}\ndata: ${JSON.stringify(event.data)}\n\n`),
               )
             }
-            // Clear missed events after sending
-            await redis.del(`events:${userId}:missed`)
           }
         } catch (error) {
           console.error("Error fetching missed events:", error)
         }
       }
-
-      // Set up Redis pub/sub for real-time updates
-      // In a production environment, you would use a more robust solution
-      // This is a simplified example
 
       // For demo purposes, we'll send periodic updates
       let eventId = 1
@@ -96,19 +85,8 @@ export async function GET(request: Request) {
           totalContractValue: Math.floor(Math.random() * 50000) + 20000,
         }
 
-        const eventData = {
-          id: eventId++,
-          type: "metrics-update",
-          data: metricsData,
-          timestamp: new Date().toISOString(),
-        }
-
-        // Store event for potential recovery
-        await redis.lpush(`events:${userId}:recent`, JSON.stringify(eventData))
-        await redis.ltrim(`events:${userId}:recent`, 0, 99) // Keep last 100 events
-
         controller.enqueue(
-          encoder.encode(`event: metrics-update\nid: ${eventData.id}\ndata: ${JSON.stringify(metricsData)}\n\n`),
+          encoder.encode(`event: metrics-update\nid: ${eventId++}\ndata: ${JSON.stringify(metricsData)}\n\n`),
         )
       }, 5000)
 
@@ -132,19 +110,8 @@ export async function GET(request: Request) {
           title: titles[Math.floor(Math.random() * titles.length)],
         }
 
-        const eventData = {
-          id: eventId++,
-          type: "activity-update",
-          data: activityData,
-          timestamp: new Date().toISOString(),
-        }
-
-        // Store event for potential recovery
-        await redis.lpush(`events:${userId}:recent`, JSON.stringify(eventData))
-        await redis.ltrim(`events:${userId}:recent`, 0, 99) // Keep last 100 events
-
         controller.enqueue(
-          encoder.encode(`event: activity-update\nid: ${eventData.id}\ndata: ${JSON.stringify(activityData)}\n\n`),
+          encoder.encode(`event: activity-update\nid: ${eventId++}\ndata: ${JSON.stringify(activityData)}\n\n`),
         )
       }, 8000)
 

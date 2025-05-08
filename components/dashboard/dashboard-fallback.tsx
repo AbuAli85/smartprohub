@@ -2,45 +2,60 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { AlertCircle } from "lucide-react"
-import { isSupabaseConfigured } from "@/lib/supabase/client"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertTriangle, RefreshCw } from "lucide-react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 
-export function DashboardFallback({ error }: { error?: Error }) {
-  const isConfigError = !isSupabaseConfigured()
+interface DashboardFallbackProps {
+  error?: string
+  title?: string
+  description?: string
+}
+
+export function DashboardFallback({
+  error = "We're having trouble loading your dashboard data.",
+  title = "Dashboard Unavailable",
+  description = "We're experiencing some technical difficulties. Please try again later.",
+}: DashboardFallbackProps) {
+  const router = useRouter()
 
   return (
     <div className="container mx-auto py-8">
-      <Card className="mx-auto max-w-md">
+      <Card className="w-full max-w-3xl mx-auto">
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 text-amber-500" />
-            <CardTitle>{isConfigError ? "Supabase Configuration Error" : "Dashboard Error"}</CardTitle>
-          </div>
-          <CardDescription>
-            {isConfigError
-              ? "There was a problem with the Supabase configuration."
-              : "There was a problem loading your dashboard."}
-          </CardDescription>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {isConfigError
-              ? "Your Supabase environment variables are missing or incorrect. Please check your configuration."
-              : error?.message || "An unexpected error occurred. Please try again later."}
-          </p>
+        <CardContent className="space-y-6">
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Error Loading Dashboard</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
 
-          <div className="flex flex-col gap-2">
-            {isConfigError ? (
-              <Button asChild>
-                <Link href="/setup/supabase">View Setup Guide</Link>
-              </Button>
-            ) : (
-              <Button onClick={() => window.location.reload()}>Try Again</Button>
-            )}
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Troubleshooting Steps:</h3>
+            <ul className="list-disc pl-5 text-sm space-y-1">
+              <li>Check your internet connection</li>
+              <li>Verify that you're logged in correctly</li>
+              <li>Run a system health check to identify issues</li>
+              <li>Contact support if the problem persists</li>
+            </ul>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <Button onClick={() => router.refresh()} className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Refresh Dashboard
+            </Button>
 
             <Button variant="outline" asChild>
-              <Link href="/">Return to Home</Link>
+              <Link href="/debug/system">Run System Check</Link>
+            </Button>
+
+            <Button variant="secondary" asChild>
+              <Link href="/auth/debug">Check Authentication</Link>
             </Button>
           </div>
         </CardContent>

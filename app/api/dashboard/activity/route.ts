@@ -13,6 +13,9 @@ export async function GET(request: Request) {
 
     const activityData = await getRecentActivity(userId, limit)
 
+    // Add some debugging information
+    console.log(`Retrieved ${activityData.length} activity records for user ${userId}`)
+
     return NextResponse.json(activityData || [])
   } catch (error) {
     console.error("Error fetching activity data:", error)

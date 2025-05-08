@@ -1,51 +1,126 @@
-import { neon } from "@neondatabase/serverless"
+import { neon, neonConfig } from "@neondatabase/serverless"
+import { Pool } from "@neondatabase/serverless"
 
-// Initialize Neon SQL client
-let neonClient: ReturnType<typeof neon> | null = null
+// Configure Neon with reasonable defaults
+neonConfig.fetchConnectionCache = true
+neonConfig.fetchTimeout = 10000 // 10 seconds timeout
 
-export function getNeonClient() {
-  if (!neonClient) {
-    const databaseUrl = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
+// Update the getDatabaseUrl function to provide better error handling and fallback options
+const getDatabaseUrl = () => {
+  const url =
+    process.env.POSTGRES_URL ||
+    process.env.DATABASE_URL ||
+    process.env.NEON_DATABASE_URL ||
+    process.env.NEON_POSTGRES_URL
 
-    if (!databaseUrl) {
-      console.warn("Neon database URL is not set")
-      return null
-    }
-
-    neonClient = neon(databaseUrl)
+  if (!url) {
+    console.error(
+      "No database URL found in environment variables. Please set one of: POSTGRES_URL, DATABASE_URL, NEON_DATABASE_URL, or NEON_POSTGRES_URL",
+    )
+    // Return a placeholder for development that will be caught and handled gracefully
+    return null
   }
 
-  return neonClient
+  return url
 }
 
-// Example function to execute a query
-export async function executeQuery(query: string, params: any[] = []) {
-  const sql = getNeonClient()
-  if (!sql) {
-    throw new Error("Neon database client is not initialized")
+// Update the createNeonClient function to handle missing database URL more gracefully
+export const createNeonClient = () => {
+  const databaseUrl = getDatabaseUrl()
+
+  if (!databaseUrl) {
+    console.error("Cannot create Neon client: No database URL available")
+    return {
+      query: async (text: string, params: any[] = []) => {
+        console.error("Database operation attempted but no database URL is configured")
+        return { rows: [], rowCount: 0, error: "No database URL configured" }
+      },
+      execute: async (query: string) => {
+        console.error("Database operation attempted but no database URL is configured")
+        return { rows: [], rowCount: 0, error: "No database URL configured" }
+      },
+      healthCheck: async () => {
+        return {
+          status: "error",
+          message: "No database URL configured in environment variables",
+          error: new Error("Missing database URL"),
+        }
+      },
+    }
+  }
+
+  // Create the SQL executor
+  const sql = neon(databaseUrl)
+
+  return {
+    // Execute a query with parameters
+    query: async (text: string, params: any[] = []) => {
+      try {
+        console.log("Executing query:", text, "with params:", params)
+        const startTime = Date.now()
+        const result = await sql(text, params)
+        const duration = Date.now() - startTime
+        console.log(`Query executed in ${duration}ms`)
+        return { rows: result, rowCount: result.length }
+      } catch (error) {
+        console.error("Database query error:", error)
+        return { rows: [], rowCount: 0, error }
+      }
+    },
+
+    // Execute a raw SQL query
+    execute: async (query: string) => {
+      try {
+        console.log("Executing raw SQL:", query)
+        const startTime = Date.now()
+        const result = await sql(query)
+        const duration = Date.now() - startTime
+        console.log(`SQL executed in ${duration}ms`)
+        return { rows: result, rowCount: result.length }
+      } catch (error) {
+        console.error("Database execution error:", error)
+        return { rows: [], rowCount: 0, error }
+      }
+    },
+
+    // Check if the database connection is working
+    healthCheck: async () => {
+      try {
+        const startTime = Date.now()
+        const result = await sql`SELECT 1 as connection_test`
+        const duration = Date.now() - startTime
+        return {
+          status: "connected",
+          message: `Connection successful (${duration}ms)`,
+          duration,
+        }
+      } catch (error: any) {
+        return {
+          status: "error",
+          message: error.message,
+          error,
+        }
+      }
+    },
+  }
+}
+
+// Create a connection pool for more intensive operations
+export const createConnectionPool = () => {
+  const databaseUrl = getDatabaseUrl()
+
+  if (!databaseUrl) {
+    console.error("Cannot create connection pool: No database URL available")
+    return null
   }
 
   try {
-    return await sql(query, params)
+    return new Pool({ connectionString: databaseUrl })
   } catch (error) {
-    console.error("Error executing Neon database query:", error)
-    throw error
+    console.error("Error creating connection pool:", error)
+    return null
   }
 }
 
-// Example function to get a user by ID
-export async function getUserById(userId: string) {
-  return executeQuery("SELECT * FROM users WHERE id = $1", [userId])
-}
-
-// Example function to create a booking
-export async function createBooking(bookingData: any) {
-  const { client_id, provider_id, service_id, booking_date, status } = bookingData
-
-  return executeQuery(
-    `INSERT INTO bookings (client_id, provider_id, service_id, booking_date, status) 
-     VALUES ($1, $2, $3, $4, $5) 
-     RETURNING *`,
-    [client_id, provider_id, service_id, booking_date, status],
-  )
-}
+// Export a singleton instance for convenience
+export const db = createNeonClient()

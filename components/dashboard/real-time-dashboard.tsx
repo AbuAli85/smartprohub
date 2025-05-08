@@ -1,15 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { AlertCircle, CheckCircle, Clock, DollarSign, Users, Calendar, FileText } from "lucide-react"
+import { AlertCircle, CheckCircle, Clock, DollarSign, Users, Calendar, FileText, RefreshCw } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { useSSE } from "@/lib/sse/sse-client"
+import { Button } from "@/components/ui/button"
 
 // Demo data for initial render
 const demoData = {
@@ -47,9 +48,13 @@ export function RealTimeDashboard() {
   const [metrics, setMetrics] = useState(demoData.metrics)
   const [revenueData, setRevenueData] = useState(demoData.revenueData)
   const [recentActivity, setRecentActivity] = useState(demoData.recentActivity)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [timePeriod, setTimePeriod] = useState("month")
   const [user, setUser] = useState<any>(null)
+  const [token, setToken] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Fetch user data
   useEffect(() => {
@@ -57,145 +62,190 @@ export function RealTimeDashboard() {
       try {
         const {
           data: { user },
+          error,
         } = await supabase.auth.getUser()
-        setUser(user)
+
+        if (error) {
+          console.error("Error fetching user:", error)
+          setError("Authentication error. Using demo data.")
+          setIsInitialized(true)
+          return
+        }
+
+        if (user) {
+          setUser(user)
+
+          // Get session for token
+          const { data: sessionData } = await supabase.auth.getSession()
+          if (sessionData?.session?.access_token) {
+            setToken(sessionData.session.access_token)
+          }
+        } else {
+          // No user found, use demo data
+          console.log("No authenticated user found, using demo data")
+          setIsInitialized(true)
+        }
       } catch (error) {
         console.error("Error fetching user:", error)
+        setError("Failed to fetch user data. Using demo data.")
+        setIsInitialized(true)
       }
     }
 
     fetchUserData()
-  }, [])
+
+    // Set a timeout to prevent infinite loading
+    timeoutRef.current = setTimeout(() => {
+      if (!isInitialized) {
+        console.log("Initialization timeout reached, using demo data")
+        setIsInitialized(true)
+        setError("Loading timeout reached. Using demo data.")
+      }
+    }, 5000) // 5 second timeout
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [isInitialized])
+
+  // Fetch dashboard data function
+  const fetchDashboardData = useCallback(async () => {
+    if (!user) {
+      setIsInitialized(true)
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      // Set a timeout to prevent hanging on API calls
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Request timeout")), 10000))
+
+      // Fetch data from API endpoints with timeout
+      const fetchMetrics = fetch(`/api/dashboard/metrics?userId=${user.id}`).then((res) => res.json())
+      const fetchRevenue = fetch(`/api/dashboard/revenue?userId=${user.id}&period=${timePeriod}`).then((res) =>
+        res.json(),
+      )
+      const fetchActivity = fetch(`/api/dashboard/activity?userId=${user.id}&limit=10`).then((res) => res.json())
+
+      // Race each fetch against the timeout
+      const [metricsData, revenueData, activityData] = await Promise.all([
+        Promise.race([fetchMetrics, timeoutPromise]),
+        Promise.race([fetchRevenue, timeoutPromise]),
+        Promise.race([fetchActivity, timeoutPromise]),
+      ])
+
+      // Update state with fetched data
+      if (metricsData && !metricsData.error) {
+        setMetrics(metricsData[0] || demoData.metrics)
+      }
+
+      if (revenueData && !revenueData.error) {
+        setRevenueData(revenueData.length ? revenueData : demoData.revenueData)
+      }
+
+      if (activityData && !activityData.error) {
+        setRecentActivity(activityData.length ? activityData : demoData.recentActivity)
+      }
+
+      setIsInitialized(true)
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error)
+      setError(`Failed to load dashboard data: ${error.message}. Using demo data.`)
+
+      // Use demo data as fallback
+      setMetrics(demoData.metrics)
+      setRevenueData(demoData.revenueData)
+      setRecentActivity(demoData.recentActivity)
+      setIsInitialized(true)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [user, timePeriod])
 
   // Fetch initial dashboard data
   useEffect(() => {
-    if (!user) return
-
-    async function fetchDashboardData() {
-      try {
-        setIsLoading(true)
-
-        // Fetch data from API endpoints
-        const [metricsRes, revenueRes, activityRes] = await Promise.all([
-          fetch(`/api/dashboard/metrics?userId=${user.id}`),
-          fetch(`/api/dashboard/revenue?userId=${user.id}&period=${timePeriod}`),
-          fetch(`/api/dashboard/activity?userId=${user.id}&limit=10`),
-        ])
-
-        if (metricsRes.ok && revenueRes.ok && activityRes.ok) {
-          const [metricsData, revenueData, activityData] = await Promise.all([
-            metricsRes.json(),
-            revenueRes.json(),
-            activityRes.json(),
-          ])
-
-          setMetrics(metricsData)
-          setRevenueData(revenueData)
-          setRecentActivity(activityData)
-        }
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-      } finally {
-        setIsLoading(false)
-      }
+    if (user) {
+      fetchDashboardData()
     }
+  }, [user, timePeriod, fetchDashboardData])
 
-    fetchDashboardData()
+  // Set up SSE connection
+  const sseUrl = user && token ? `/api/dashboard/events?userId=${user.id}&token=${token}` : null
 
-    // Set up real-time subscription
-    // const subscription = setupRealtimeSubscription(user.id)
-
-    // return () => {
-    //   // Clean up subscription
-    //   if (subscription) {
-    //     subscription.unsubscribe()
-    //   }
-    // }
-  }, [user, timePeriod])
-
-  const { isConnected, disconnect } = useSSE(
-    `/api/dashboard/events?userId=${user?.id}&token=${localStorage.getItem("supabase.auth.token")}`,
-    {
-      onOpen: () => {
-        console.log("SSE connection established")
-      },
-      onMessage: (event) => {
-        // Handle generic messages
-        console.log("SSE message received:", event)
-      },
-      onError: (error) => {
-        console.error("SSE connection error:", error)
-      },
-      onReconnect: () => {
-        console.log("Attempting to reconnect SSE")
-      },
-      maxRetries: 5,
-      retryInterval: 3000,
+  const { isConnected, reconnect } = useSSE(sseUrl, {
+    onOpen: () => {
+      console.log("SSE connection established")
     },
-  )
+    onMessage: (event) => {
+      // Handle generic messages
+      console.log("SSE message received:", event)
+    },
+    onError: (error) => {
+      console.error("SSE connection error:", error)
+    },
+    onReconnect: () => {
+      console.log("Attempting to reconnect SSE")
+    },
+    maxRetries: 5,
+    retryInterval: 3000,
+  })
 
   // Add event listeners for specific event types
   useEffect(() => {
     if (!user) return
 
     const handleMetricsUpdate = (event) => {
-      const data = JSON.parse(event.data)
-      setMetrics((prev) => ({ ...prev, ...data }))
+      try {
+        const data = JSON.parse(event.data)
+        setMetrics((prev) => ({ ...prev, ...data }))
+      } catch (error) {
+        console.error("Error parsing metrics update:", error)
+      }
     }
 
     const handleActivityUpdate = (event) => {
-      const data = JSON.parse(event.data)
-      setRecentActivity((prev) => [data, ...prev].slice(0, 10))
+      try {
+        const data = JSON.parse(event.data)
+        setRecentActivity((prev) => [data, ...prev].slice(0, 10))
+      } catch (error) {
+        console.error("Error parsing activity update:", error)
+      }
     }
 
     const handleRevenueUpdate = (event) => {
-      const data = JSON.parse(event.data)
-      setRevenueData(data)
+      try {
+        const data = JSON.parse(event.data)
+        setRevenueData(data)
+      } catch (error) {
+        console.error("Error parsing revenue update:", error)
+      }
     }
 
     // Add event listeners
-    window.addEventListener("metrics-update", handleMetricsUpdate)
-    window.addEventListener("activity-update", handleActivityUpdate)
-    window.addEventListener("revenue-update", handleRevenueUpdate)
+    if (typeof window !== "undefined" && sseUrl) {
+      try {
+        const eventSource = new EventSource(sseUrl)
 
-    // Clean up
-    return () => {
-      window.removeEventListener("metrics-update", handleMetricsUpdate)
-      window.removeEventListener("activity-update", handleActivityUpdate)
-      window.removeEventListener("revenue-update", handleRevenueUpdate)
-      disconnect()
+        eventSource.addEventListener("metrics-update", handleMetricsUpdate)
+        eventSource.addEventListener("activity-update", handleActivityUpdate)
+        eventSource.addEventListener("revenue-update", handleRevenueUpdate)
+
+        // Clean up
+        return () => {
+          eventSource.removeEventListener("metrics-update", handleMetricsUpdate)
+          eventSource.removeEventListener("activity-update", handleActivityUpdate)
+          eventSource.removeEventListener("revenue-update", handleRevenueUpdate)
+          eventSource.close()
+        }
+      } catch (error) {
+        console.error("Error setting up EventSource:", error)
+      }
     }
-  }, [user, disconnect])
-
-  // Set up real-time subscription
-  function setupRealtimeSubscription(userId: string) {
-    if (!userId) return null
-
-    // This is a simplified example - in a real app, you would use WebSockets or SSE
-    // to subscribe to Redis pub/sub channels
-    const eventSource = new EventSource(`/api/dashboard/events?userId=${userId}`)
-
-    eventSource.addEventListener("metrics-update", (event) => {
-      const data = JSON.parse(event.data)
-      setMetrics((prev) => ({ ...prev, ...data }))
-    })
-
-    eventSource.addEventListener("activity-update", (event) => {
-      const data = JSON.parse(event.data)
-      setRecentActivity((prev) => [data, ...prev].slice(0, 10))
-    })
-
-    eventSource.addEventListener("revenue-update", (event) => {
-      const data = JSON.parse(event.data)
-      setRevenueData(data)
-    })
-
-    return {
-      unsubscribe: () => {
-        eventSource.close()
-      },
-    }
-  }
+  }, [user, sseUrl])
 
   // Format currency
   const formatCurrency = (value: number) => {
@@ -232,14 +282,73 @@ export function RealTimeDashboard() {
     }
   }
 
+  // If not initialized yet, show a loading state
+  if (!isInitialized) {
+    return (
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-20 mb-1" />
+                <Skeleton className="h-3 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+          <Card className="col-span-4">
+            <CardHeader>
+              <Skeleton className="h-6 w-32 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-[300px] w-full" />
+            </CardContent>
+          </Card>
+          <Card className="col-span-3">
+            <CardHeader>
+              <Skeleton className="h-6 w-32 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      {!isConnected && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4" role="alert">
-          <p className="font-bold">Connection Status</p>
-          <p>Reconnecting to real-time updates...</p>
+      {error && (
+        <div className="bg-amber-50 border-l-4 border-amber-500 text-amber-700 p-4 mb-4" role="alert">
+          <p className="font-bold">Notice</p>
+          <p>{error}</p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={fetchDashboardData}>
+            <RefreshCw className="h-4 w-4 mr-2" /> Retry
+          </Button>
         </div>
       )}
+
+      {!isConnected && user && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4" role="alert">
+          <p className="font-bold">Connection Status</p>
+          <p>Real-time updates are currently disconnected. Data may not be up-to-date.</p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={reconnect}>
+            <RefreshCw className="h-4 w-4 mr-2" /> Reconnect
+          </Button>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -366,10 +475,12 @@ export function RealTimeDashboard() {
                         {activity.type === "booking"
                           ? "New booking"
                           : activity.type === "contract"
-                            ? activity.title
+                            ? activity.title || "Contract"
                             : "New message"}
                       </p>
-                      <p className="text-xs text-muted-foreground">{formatDate(activity.createdAt)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(activity.createdAt || activity.created_at)}
+                      </p>
                     </div>
                     <Badge
                       variant={

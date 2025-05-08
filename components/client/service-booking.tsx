@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, Calendar, Clock, DollarSign } from "lucide-react"
+import { Loader2, Calendar, Clock, DollarSign, AlertCircle, RefreshCw } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
@@ -23,6 +23,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 type Service = {
   id: string
@@ -69,27 +70,53 @@ type Booking = {
   }
 }
 
+// Constants for API request timeouts
+const API_TIMEOUT = 15000 // 15 seconds
+
 export default function ServiceBooking() {
   const [services, setServices] = useState<Service[]>([])
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
+  const [servicesError, setServicesError] = useState<string | null>(null)
+  const [bookingsError, setBookingsError] = useState<string | null>(null)
   const [bookingLoading, setBookingLoading] = useState(false)
   const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [availableTimeSlots, setAvailableTimeSlots] = useState<TimeSlot[]>([])
+  const [timeSlotsLoading, setTimeSlotsLoading] = useState(false)
+  const [timeSlotsError, setTimeSlotsError] = useState<string | null>(null)
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null)
   const [bookingNotes, setBookingNotes] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [realtimeSubscribed, setRealtimeSubscribed] = useState(false)
   const { toast } = useToast()
 
+  // Helper function to create a timeout promise
+  const createTimeout = (ms: number) => {
+    return new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Request timed out after ${ms}ms`)), ms))
+  }
+
   // Fetch services and bookings on component mount
   useEffect(() => {
     fetchServices()
     fetchBookings()
 
-    // Set up realtime subscription
-    if (!realtimeSubscribed) {
+    // Set up realtime subscription with improved error handling
+    setupRealtimeSubscriptions()
+
+    // Cleanup function
+    return () => {
+      cleanupRealtimeSubscriptions()
+    }
+  }, [])
+
+  // Setup realtime subscriptions with error handling
+  const setupRealtimeSubscriptions = () => {
+    if (realtimeSubscribed) return
+
+    try {
+      console.log("Setting up realtime subscriptions...")
+
       const bookingsSubscription = supabase
         .channel("bookings-changes")
         .on(
@@ -104,7 +131,18 @@ export default function ServiceBooking() {
             fetchBookings()
           },
         )
-        .subscribe()
+        .subscribe((status) => {
+          console.log(`Bookings subscription status: ${status}`)
+          if (status === "SUBSCRIBED") {
+            console.log("Successfully subscribed to bookings changes")
+          } else if (status === "CHANNEL_ERROR") {
+            console.error("Error subscribing to bookings changes")
+            // Try to reconnect after a delay
+            setTimeout(() => {
+              if (!realtimeSubscribed) setupRealtimeSubscriptions()
+            }, 5000)
+          }
+        })
 
       const servicesSubscription = supabase
         .channel("services-changes")
@@ -113,51 +151,96 @@ export default function ServiceBooking() {
           {
             event: "*",
             schema: "public",
-            table: "services",
+            table: "provider_services", // Correct table name
           },
           (payload) => {
             console.log("Realtime services update:", payload)
             fetchServices()
           },
         )
-        .subscribe()
+        .subscribe((status) => {
+          console.log(`Services subscription status: ${status}`)
+          if (status === "SUBSCRIBED") {
+            console.log("Successfully subscribed to services changes")
+          } else if (status === "CHANNEL_ERROR") {
+            console.error("Error subscribing to services changes")
+            // Try to reconnect after a delay
+            setTimeout(() => {
+              if (!realtimeSubscribed) setupRealtimeSubscriptions()
+            }, 5000)
+          }
+        })
 
+      // Store subscriptions in component state for cleanup
       setRealtimeSubscribed(true)
 
-      // Cleanup subscription on unmount
-      return () => {
-        bookingsSubscription.unsubscribe()
-        servicesSubscription.unsubscribe()
-      }
+      // Store subscriptions in window for cleanup
+      window.__bookingsSubscription = bookingsSubscription
+      window.__servicesSubscription = servicesSubscription
+    } catch (error) {
+      console.error("Error setting up realtime subscriptions:", error)
+      // Try to reconnect after a delay
+      setTimeout(() => {
+        if (!realtimeSubscribed) setupRealtimeSubscriptions()
+      }, 5000)
     }
-  }, [realtimeSubscribed])
+  }
+
+  // Cleanup realtime subscriptions
+  const cleanupRealtimeSubscriptions = () => {
+    try {
+      if (window.__bookingsSubscription) {
+        window.__bookingsSubscription.unsubscribe()
+      }
+      if (window.__servicesSubscription) {
+        window.__servicesSubscription.unsubscribe()
+      }
+      setRealtimeSubscribed(false)
+    } catch (error) {
+      console.error("Error cleaning up subscriptions:", error)
+    }
+  }
 
   const fetchServices = async () => {
     try {
       setLoading(true)
+      setServicesError(null)
 
-      // Fetch active services with provider details
-      const { data, error } = await supabase
-        .from("services")
-        .select(`
-          *,
-          provider:provider_id (
-            id,
-            full_name,
-            avatar_url
-          )
-        `)
-        .eq("is_active", true)
-        .order("name")
+      console.log("Fetching services...")
 
-      if (error) throw error
+      // Race the fetch against a timeout
+      const result = await Promise.race([
+        supabase
+          .from("provider_services") // Correct table name
+          .select(`
+            *,
+            provider:provider_id (
+              id,
+              full_name,
+              avatar_url
+            )
+          `)
+          .eq("is_active", true)
+          .order("name"),
+        createTimeout(API_TIMEOUT),
+      ])
 
+      // If we get here, the fetch succeeded
+      const { data, error } = result as any
+
+      if (error) {
+        console.error("Supabase error fetching services:", error)
+        throw error
+      }
+
+      console.log(`Fetched ${data?.length || 0} services`)
       setServices(data || [])
     } catch (error: any) {
       console.error("Error fetching services:", error)
+      setServicesError(error.message || "Failed to load services")
       toast({
         title: "Error fetching services",
-        description: error.message,
+        description: error.message || "Please try again later",
         variant: "destructive",
       })
     } finally {
@@ -168,43 +251,62 @@ export default function ServiceBooking() {
   const fetchBookings = async () => {
     try {
       setLoading(true)
+      setBookingsError(null)
+
+      console.log("Fetching bookings...")
 
       // Get current user
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser()
+
+      if (userError) {
+        throw new Error(`Authentication error: ${userError.message}`)
+      }
 
       if (!user) {
         throw new Error("User not authenticated")
       }
 
-      // Fetch bookings for this client
-      const { data, error } = await supabase
-        .from("bookings")
-        .select(`
-          *,
-          service:service_id (
-            name,
-            price,
-            duration
-          ),
-          provider:provider_id (
-            full_name,
-            avatar_url
-          )
-        `)
-        .eq("client_id", user.id)
-        .order("booking_date", { ascending: false })
-        .order("start_time", { ascending: true })
+      // Race the fetch against a timeout
+      const result = await Promise.race([
+        supabase
+          .from("bookings")
+          .select(`
+            *,
+            service:service_id (
+              name,
+              price,
+              duration
+            ),
+            provider:provider_id (
+              full_name,
+              avatar_url
+            )
+          `)
+          .eq("client_id", user.id)
+          .order("booking_date", { ascending: false })
+          .order("start_time", { ascending: true }),
+        createTimeout(API_TIMEOUT),
+      ])
 
-      if (error) throw error
+      // If we get here, the fetch succeeded
+      const { data, error } = result as any
 
+      if (error) {
+        console.error("Supabase error fetching bookings:", error)
+        throw error
+      }
+
+      console.log(`Fetched ${data?.length || 0} bookings`)
       setBookings(data || [])
     } catch (error: any) {
       console.error("Error fetching bookings:", error)
+      setBookingsError(error.message || "Failed to load bookings")
       toast({
         title: "Error fetching bookings",
-        description: error.message,
+        description: error.message || "Please try again later",
         variant: "destructive",
       })
     } finally {
@@ -214,16 +316,30 @@ export default function ServiceBooking() {
 
   const generateTimeSlots = async (date: Date, serviceId: string) => {
     try {
+      setTimeSlotsLoading(true)
+      setTimeSlotsError(null)
+
       if (!date || !serviceId) return []
 
-      // Get service details
-      const { data: serviceData, error: serviceError } = await supabase
-        .from("services")
-        .select("*")
-        .eq("id", serviceId)
-        .single()
+      console.log(`Generating time slots for date: ${date.toISOString().split("T")[0]} and service: ${serviceId}`)
 
-      if (serviceError) throw serviceError
+      // Race the service fetch against a timeout
+      const serviceResult = await Promise.race([
+        supabase
+          .from("provider_services") // Correct table name
+          .select("*")
+          .eq("id", serviceId)
+          .single(),
+        createTimeout(API_TIMEOUT),
+      ])
+
+      // If we get here, the fetch succeeded
+      const { data: serviceData, error: serviceError } = serviceResult as any
+
+      if (serviceError) {
+        console.error("Error fetching service details:", serviceError)
+        throw serviceError
+      }
 
       const service = serviceData as Service
       const serviceDuration = service.duration
@@ -231,14 +347,24 @@ export default function ServiceBooking() {
       // Get provider's existing bookings for the selected date
       const formattedDate = format(date, "yyyy-MM-dd")
 
-      const { data: existingBookings, error: bookingsError } = await supabase
-        .from("bookings")
-        .select("start_time, end_time")
-        .eq("provider_id", service.provider_id)
-        .eq("booking_date", formattedDate)
-        .not("status", "eq", "cancelled")
+      // Race the bookings fetch against a timeout
+      const bookingsResult = await Promise.race([
+        supabase
+          .from("bookings")
+          .select("start_time, end_time")
+          .eq("provider_id", service.provider_id)
+          .eq("booking_date", formattedDate)
+          .not("status", "eq", "cancelled"),
+        createTimeout(API_TIMEOUT),
+      ])
 
-      if (bookingsError) throw bookingsError
+      // If we get here, the fetch succeeded
+      const { data: existingBookings, error: bookingsError } = bookingsResult as any
+
+      if (bookingsError) {
+        console.error("Error fetching existing bookings:", bookingsError)
+        throw bookingsError
+      }
 
       // Generate time slots (9 AM to 5 PM)
       const slots: TimeSlot[] = []
@@ -247,7 +373,7 @@ export default function ServiceBooking() {
 
       // Convert existing bookings to blocked time ranges
       const blockedTimes =
-        existingBookings?.map((booking) => ({
+        existingBookings?.map((booking: any) => ({
           start: booking.start_time,
           end: booking.end_time,
         })) || []
@@ -269,7 +395,7 @@ export default function ServiceBooking() {
           const endTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`
 
           // Check if slot overlaps with any existing booking
-          const isOverlapping = blockedTimes.some((blocked) => {
+          const isOverlapping = blockedTimes.some((blocked: any) => {
             return (
               (startTime >= blocked.start && startTime < blocked.end) ||
               (endTime > blocked.start && endTime <= blocked.end) ||
@@ -287,15 +413,19 @@ export default function ServiceBooking() {
         }
       }
 
+      console.log(`Generated ${slots.length} available time slots`)
       return slots
     } catch (error: any) {
       console.error("Error generating time slots:", error)
+      setTimeSlotsError(error.message || "Failed to load available time slots")
       toast({
         title: "Error",
         description: "Failed to load available time slots",
         variant: "destructive",
       })
       return []
+    } finally {
+      setTimeSlotsLoading(false)
     }
   }
 
@@ -344,10 +474,17 @@ export default function ServiceBooking() {
     try {
       setBookingLoading(true)
 
+      console.log("Creating booking...")
+
       // Get current user
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser()
+
+      if (userError) {
+        throw new Error(`Authentication error: ${userError.message}`)
+      }
 
       if (!user) {
         throw new Error("User not authenticated")
@@ -372,7 +509,12 @@ export default function ServiceBooking() {
         created_at: new Date().toISOString(),
       })
 
-      if (error) throw error
+      if (error) {
+        console.error("Error creating booking:", error)
+        throw error
+      }
+
+      console.log("Booking created successfully")
 
       toast({
         title: "Booking successful",
@@ -393,7 +535,7 @@ export default function ServiceBooking() {
       console.error("Error creating booking:", error)
       toast({
         title: "Booking failed",
-        description: error.message,
+        description: error.message || "Please try again later",
         variant: "destructive",
       })
     } finally {
@@ -409,10 +551,17 @@ export default function ServiceBooking() {
     try {
       setLoading(true)
 
+      console.log(`Cancelling booking: ${bookingId}`)
+
       // Get current user
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser()
+
+      if (userError) {
+        throw new Error(`Authentication error: ${userError.message}`)
+      }
 
       if (!user) {
         throw new Error("User not authenticated")
@@ -427,7 +576,12 @@ export default function ServiceBooking() {
         .eq("id", bookingId)
         .eq("client_id", user.id) // Security check
 
-      if (error) throw error
+      if (error) {
+        console.error("Error cancelling booking:", error)
+        throw error
+      }
+
+      console.log("Booking cancelled successfully")
 
       toast({
         title: "Booking cancelled",
@@ -441,7 +595,7 @@ export default function ServiceBooking() {
       console.error("Error cancelling booking:", error)
       toast({
         title: "Error cancelling booking",
-        description: error.message,
+        description: error.message || "Please try again later",
         variant: "destructive",
       })
     } finally {
@@ -496,7 +650,21 @@ export default function ServiceBooking() {
                 </div>
               )}
 
-              {selectedDate && availableTimeSlots.length > 0 && (
+              {timeSlotsLoading && (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              )}
+
+              {timeSlotsError && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{timeSlotsError}</AlertDescription>
+                </Alert>
+              )}
+
+              {selectedDate && !timeSlotsLoading && availableTimeSlots.length > 0 && (
                 <div className="grid gap-2">
                   <Label>Select Time</Label>
                   <Select onValueChange={setSelectedTimeSlot}>
@@ -514,7 +682,7 @@ export default function ServiceBooking() {
                 </div>
               )}
 
-              {selectedDate && availableTimeSlots.length === 0 && (
+              {selectedDate && !timeSlotsLoading && availableTimeSlots.length === 0 && !timeSlotsError && (
                 <div className="text-center py-2">
                   <p className="text-sm text-muted-foreground">No available time slots for this date</p>
                 </div>
@@ -554,69 +722,105 @@ export default function ServiceBooking() {
         </Dialog>
       </div>
 
+      {servicesError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error loading services</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>{servicesError}</span>
+            <Button size="sm" variant="outline" onClick={fetchServices} className="ml-2">
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {loading
-          ? Array(3)
-              .fill(0)
-              .map((_, i) => (
-                <Card key={i} className="overflow-hidden">
-                  <div className="h-40 bg-muted animate-pulse" />
-                  <CardHeader>
-                    <div className="h-5 w-3/4 bg-muted animate-pulse rounded mb-2" />
-                    <div className="h-4 w-1/2 bg-muted animate-pulse rounded" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-4 w-full bg-muted animate-pulse rounded mb-2" />
-                    <div className="h-4 w-full bg-muted animate-pulse rounded mb-2" />
-                    <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
-                  </CardContent>
-                  <CardFooter>
-                    <div className="h-9 w-full bg-muted animate-pulse rounded" />
-                  </CardFooter>
-                </Card>
-              ))
-          : services.map((service) => (
-              <Card key={service.id} className="overflow-hidden">
-                <div className="bg-gradient-to-r from-blue-500 to-purple-600 h-40 flex items-center justify-center text-white">
-                  <div className="text-center p-4">
-                    <h3 className="text-xl font-bold">{service.name}</h3>
-                    <p className="text-sm opacity-90">{service.duration} minutes</p>
-                  </div>
-                </div>
-                <CardHeader className="flex flex-row items-center gap-4">
-                  <Avatar>
-                    <AvatarImage src={service.provider?.avatar_url || ""} />
-                    <AvatarFallback>{service.provider?.full_name?.[0] || "P"}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <CardTitle className="text-lg">${service.price.toFixed(2)}</CardTitle>
-                    <CardDescription>By {service.provider?.full_name}</CardDescription>
-                  </div>
+        {loading ? (
+          Array(3)
+            .fill(0)
+            .map((_, i) => (
+              <Card key={i} className="overflow-hidden">
+                <div className="h-40 bg-muted animate-pulse" />
+                <CardHeader>
+                  <div className="h-5 w-3/4 bg-muted animate-pulse rounded mb-2" />
+                  <div className="h-4 w-1/2 bg-muted animate-pulse rounded" />
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground line-clamp-3">{service.description}</p>
+                  <div className="h-4 w-full bg-muted animate-pulse rounded mb-2" />
+                  <div className="h-4 w-full bg-muted animate-pulse rounded mb-2" />
+                  <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
                 </CardContent>
                 <CardFooter>
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      setSelectedService(service)
-                      setSelectedDate(undefined)
-                      setSelectedTimeSlot(null)
-                      setBookingNotes("")
-                      setAvailableTimeSlots([])
-                      setIsDialogOpen(true)
-                    }}
-                  >
-                    Book Now
-                  </Button>
+                  <div className="h-9 w-full bg-muted animate-pulse rounded" />
                 </CardFooter>
               </Card>
-            ))}
+            ))
+        ) : services.length > 0 ? (
+          services.map((service) => (
+            <Card key={service.id} className="overflow-hidden">
+              <div className="bg-gradient-to-r from-blue-500 to-purple-600 h-40 flex items-center justify-center text-white">
+                <div className="text-center p-4">
+                  <h3 className="text-xl font-bold">{service.name}</h3>
+                  <p className="text-sm opacity-90">{service.duration} minutes</p>
+                </div>
+              </div>
+              <CardHeader className="flex flex-row items-center gap-4">
+                <Avatar>
+                  <AvatarImage src={service.provider?.avatar_url || ""} />
+                  <AvatarFallback>{service.provider?.full_name?.[0] || "P"}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <CardTitle className="text-lg">${service.price.toFixed(2)}</CardTitle>
+                  <CardDescription>By {service.provider?.full_name}</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground line-clamp-3">{service.description}</p>
+              </CardContent>
+              <CardFooter>
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setSelectedService(service)
+                    setSelectedDate(undefined)
+                    setSelectedTimeSlot(null)
+                    setBookingNotes("")
+                    setAvailableTimeSlots([])
+                    setIsDialogOpen(true)
+                  }}
+                >
+                  Book Now
+                </Button>
+              </CardFooter>
+            </Card>
+          ))
+        ) : !servicesError ? (
+          <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
+            <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium">No services available</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              There are currently no active services available for booking. Please check back later.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-10">
         <h3 className="text-2xl font-bold mb-6">My Bookings</h3>
+
+        {bookingsError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error loading bookings</AlertTitle>
+            <AlertDescription className="flex items-center justify-between">
+              <span>{bookingsError}</span>
+              <Button size="sm" variant="outline" onClick={fetchBookings} className="ml-2">
+                <RefreshCw className="mr-2 h-4 w-4" /> Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Tabs defaultValue="upcoming" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
@@ -762,5 +966,13 @@ export default function ServiceBooking() {
         ))}
       </div>
     )
+  }
+}
+
+// Add this to the global Window interface
+declare global {
+  interface Window {
+    __bookingsSubscription?: any
+    __servicesSubscription?: any
   }
 }
