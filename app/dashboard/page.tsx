@@ -1,8 +1,12 @@
 export default function DashboardPage() {
   return (
-    <div className="container mx-auto py-10">
-      <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
-      <p>Welcome to your dashboard. This is a placeholder page.</p>
+    <div className="flex min-h-screen flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
+          <p className="mt-2 text-lg text-gray-600 dark:text-gray-400">Coming soon</p>
+        </div>
+      </div>
     </div>
   )
 }
