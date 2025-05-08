@@ -54,6 +54,14 @@ function isProtectedRoute(pathname: string): boolean {
 }
 
 export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
+
+  // Create a Supabase client configured for the middleware
+  const supabase = createMiddlewareClient({ req, res })
+
+  // Refresh the session if it exists
+  await supabase.auth.getSession()
+
   const { pathname } = req.nextUrl
   const origin = req.headers.get("origin")
 
@@ -74,20 +82,19 @@ export async function middleware(req: NextRequest) {
     }
 
     // Handle actual request
-    const response = NextResponse.next()
 
     // Add CORS headers to the response
     if (origin && allowedOrigins.includes(origin)) {
-      response.headers.set("Access-Control-Allow-Origin", origin)
+      res.headers.set("Access-Control-Allow-Origin", origin)
     } else {
-      response.headers.set("Access-Control-Allow-Origin", allowedOrigins[0])
+      res.headers.set("Access-Control-Allow-Origin", allowedOrigins[0])
     }
 
-    response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-    response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-    response.headers.set("Access-Control-Allow-Credentials", "true")
+    res.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    res.headers.set("Access-Control-Allow-Credentials", "true")
 
-    return response
+    return res
   }
 
   // Skip middleware for static assets, API routes, and auth routes
@@ -102,13 +109,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // Create a response to modify
-  const res = NextResponse.next()
-
   try {
-    // Create Supabase client
-    const supabase = createMiddlewareClient({ req, res })
-
     // Get the user session
     const {
       data: { session },
@@ -185,12 +186,15 @@ export async function middleware(req: NextRequest) {
   }
 }
 
-// Configure the middleware to run on specific paths
 export const config = {
   matcher: [
-    // Apply to all API routes
-    "/api/:path*",
-    // Apply to all routes except static assets and specific excluded paths
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public (public files)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|public).*)",
   ],
 }

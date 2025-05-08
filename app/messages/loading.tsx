@@ -1,44 +1,39 @@
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function MessagesLoading() {
   return (
     <div className="container mx-auto py-6">
-      <Skeleton className="h-10 w-48 mb-6" />
-
-      <div className="grid grid-cols-1 gap-6">
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-32" />
-          </CardHeader>
-          <CardContent className="h-[500px]">
-            <div className="space-y-4">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-3/4 ml-auto" />
-              <Skeleton className="h-12 w-2/3" />
-              <Skeleton className="h-12 w-4/5 ml-auto" />
-              <Skeleton className="h-12 w-3/5" />
+      <Skeleton className="h-8 w-48 mb-6" />
+      <div className="border rounded-lg">
+        <div className="border-b p-4">
+          <Skeleton className="h-6 w-32" />
+        </div>
+        <div className="h-[500px] p-4">
+          <div className="space-y-4">
+            <div className="flex justify-start">
+              <div className="flex items-start max-w-[80%]">
+                <Skeleton className="h-8 w-8 rounded-full mr-2" />
+                <div>
+                  <Skeleton className="h-20 w-64 rounded-lg" />
+                  <Skeleton className="h-4 w-24 mt-1" />
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-40" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-4 w-full mb-2" />
-            <Skeleton className="h-4 w-5/6 mb-2" />
-            <Skeleton className="h-4 w-4/6 mb-6" />
-
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-4 w-4/5" />
-              <Skeleton className="h-4 w-3/5" />
+            <div className="flex justify-end">
+              <div>
+                <Skeleton className="h-16 w-56 rounded-lg" />
+                <Skeleton className="h-4 w-24 mt-1 ml-auto" />
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+        <div className="border-t p-4">
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-10" />
+            <Skeleton className="h-10 flex-1" />
+            <Skeleton className="h-10 w-20" />
+          </div>
+        </div>
       </div>
     </div>
   )
