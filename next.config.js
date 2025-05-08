@@ -6,14 +6,16 @@ const nextConfig = {
     domains: ["localhost", "vercel.app", "supabase.co"],
     unoptimized: true,
   },
-  experimental: {
-    serverActions: true,
-  },
   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: true,
+  },
+  // Disable experimental features that might cause issues
+  experimental: {
+    appDir: true,
+    serverActions: false,
   },
 }
 

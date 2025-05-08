@@ -4,29 +4,29 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { AuthProvider } from "@/components/auth/auth-provider"
-import { AuthErrorBoundary } from "@/components/auth/auth-error-boundary"
+import { AuthProviderDirect } from "@/components/auth/auth-provider-direct"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "SmartPRO - Business Services Hub",
-  description: "A comprehensive platform for business services",
+  title: "SmartPRO – Business Services Hub",
+  description: "A comprehensive platform for business service providers and clients",
     generator: 'v0.dev'
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-      </head>
+    <html lang="en">
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AuthProvider>
-            <AuthErrorBoundary>{children}</AuthErrorBoundary>
-          </AuthProvider>
-          <Toaster />
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <AuthProviderDirect>
+            {children}
+            <Toaster />
+          </AuthProviderDirect>
         </ThemeProvider>
       </body>
     </html>

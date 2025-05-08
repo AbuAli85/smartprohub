@@ -1,8 +1,5 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@supabase/supabase-js"
 import type { Database } from "./database.types"
-
-// Global variable to store the Supabase client instance
-let supabaseInstance: ReturnType<typeof createClientComponentClient<Database>> | null = null
 
 // Check if Supabase environment variables are configured
 export function isSupabaseConfigured(): boolean {
@@ -23,6 +20,8 @@ export function isSupabaseConfigured(): boolean {
 }
 
 // Create a singleton instance of the Supabase client
+let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null
+
 export function getSupabaseClient() {
   // For server-side rendering, always create a new instance
   if (typeof window === "undefined") {
@@ -42,10 +41,10 @@ export function getSupabaseClient() {
     }
 
     // Create the client with explicit URL and key
-    supabaseInstance = createClientComponentClient<Database>({
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      options: {
+    supabaseInstance = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -70,7 +69,7 @@ export function getSupabaseClient() {
           },
         },
       },
-    })
+    )
 
     return supabaseInstance
   } catch (error) {
