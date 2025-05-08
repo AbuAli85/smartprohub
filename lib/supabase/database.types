@@ -1,4 +1,10 @@
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
 export type UserRole = "admin" | "user" | "manager" | "provider" | "client"
 
@@ -18,7 +24,6 @@ export interface Database {
           company: string | null
           position: string | null
           bio: string | null
-          provider_id: string | null
         }
         Insert: {
           id: string
@@ -32,7 +37,6 @@ export interface Database {
           company?: string | null
           position?: string | null
           bio?: string | null
-          provider_id?: string | null
         }
         Update: {
           id?: string
@@ -46,7 +50,6 @@ export interface Database {
           company?: string | null
           position?: string | null
           bio?: string | null
-          provider_id?: string | null
         }
       }
       bookings: {
