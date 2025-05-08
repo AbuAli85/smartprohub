@@ -12,11 +12,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Ensure we're using SWC
-  experimental: {
-    forceSwcTransforms: true,
-    appDir: true,
-  },
 }
 
 module.exports = nextConfig
