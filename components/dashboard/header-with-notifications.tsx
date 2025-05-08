@@ -1,8 +1,7 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { useAuth } from "@/components/auth/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -13,115 +12,83 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { NotificationCenter } from "@/components/messaging/notification-center"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { useAuth } from "@/components/auth/auth-provider"
-import { Menu, User, LogOut, Settings, MessageSquare } from "lucide-react"
+import { Menu } from "lucide-react"
 
-export function HeaderWithNotifications() {
+interface HeaderProps {
+  onMenuClick?: () => void
+}
+
+export function HeaderWithNotifications({ onMenuClick }: HeaderProps) {
   const { user, profile, signOut } = useAuth()
-  const pathname = usePathname()
-  const [open, setOpen] = useState(false)
+
+  // Get user initials for avatar fallback
+  const getUserInitials = () => {
+    if (!profile?.full_name) return "U"
+
+    return profile.full_name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase()
+      .substring(0, 2)
+  }
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background">
-      <div className="container flex h-16 items-center justify-between py-4">
-        <div className="flex items-center gap-4 md:gap-8">
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="md:hidden">
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle Menu</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-[240px] sm:w-[300px]">
-              <nav className="flex flex-col gap-4 mt-8">
-                {/* Mobile navigation links */}
-                <Link
-                  href="/dashboard"
-                  className="flex items-center gap-2 text-lg font-medium"
-                  onClick={() => setOpen(false)}
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/messages"
-                  className="flex items-center gap-2 text-lg font-medium"
-                  onClick={() => setOpen(false)}
-                >
-                  Messages
-                </Link>
-                {/* Add more mobile navigation links as needed */}
-              </nav>
-            </SheetContent>
-          </Sheet>
-          <Link href="/" className="flex items-center gap-2">
-            <span className="font-bold text-xl">SmartPRO</span>
-          </Link>
-          <nav className="hidden md:flex gap-6">
-            <Link
-              href="/dashboard"
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                pathname === "/dashboard" ? "text-primary" : "text-muted-foreground"
-              }`}
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/messages"
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                pathname === "/messages" ? "text-primary" : "text-muted-foreground"
-              }`}
-            >
-              Messages
-            </Link>
-            {/* Add more desktop navigation links as needed */}
-          </nav>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/messages">
-            <Button variant="ghost" size="icon" className="relative">
-              <MessageSquare className="h-5 w-5" />
-            </Button>
-          </Link>
-          <NotificationCenter />
-          <ThemeToggle />
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
+      <Button variant="ghost" size="icon" className="md:hidden" onClick={onMenuClick}>
+        <Menu className="h-5 w-5" />
+        <span className="sr-only">Toggle menu</span>
+      </Button>
+
+      <div className="flex-1">
+        <Link href="/" className="flex items-center gap-2 font-semibold">
+          <span className="hidden md:inline-block">SmartPRO Business Services Hub</span>
+          <span className="inline-block md:hidden">SmartPRO</span>
+        </Link>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <NotificationCenter />
+        <ThemeToggle />
+
+        {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full">
+              <Button variant="ghost" size="icon" className="rounded-full">
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={profile?.avatar_url || ""} alt={profile?.full_name || "User"} />
-                  <AvatarFallback>{profile?.full_name?.[0] || "U"}</AvatarFallback>
+                  <AvatarFallback>{getUserInitials()}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                <div className="flex flex-col">
+                  <span>{profile?.full_name || "User"}</span>
+                  <span className="text-xs text-muted-foreground">{user.email}</span>
+                </div>
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/profile" className="cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </Link>
+                <Link href="/profile">Profile</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/settings" className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </Link>
+                <Link href="/dashboard">Dashboard</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/messages">Messages</Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="cursor-pointer text-destructive focus:text-destructive"
-                onClick={() => signOut()}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Log out
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => signOut()}>Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        ) : (
+          <Button asChild variant="default" size="sm">
+            <Link href="/auth/login">Sign in</Link>
+          </Button>
+        )}
       </div>
     </header>
   )

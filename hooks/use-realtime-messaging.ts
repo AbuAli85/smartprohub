@@ -5,538 +5,332 @@ import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/components/auth/auth-provider"
 import { toast } from "@/components/ui/use-toast"
 
-export type MessageStatus = "sending" | "sent" | "delivered" | "read"
-
-export interface Message {
+export type Message = {
   id: string
-  conversation_id: string
   sender_id: string
+  recipient_id: string
+  conversation_id: string
   content: string
-  created_at: string
-  status: MessageStatus
-  is_read: boolean
   attachment_url?: string
-  attachment_type?: string
-  attachment_name?: string
+  created_at: string
+  status: "sending" | "sent" | "delivered" | "read"
+  sender_profile?: {
+    full_name?: string
+    avatar_url?: string
+  }
 }
 
-export interface Conversation {
+export type Conversation = {
   id: string
   created_at: string
   updated_at: string
   last_message?: string
   last_message_time?: string
-  participant_ids: string[]
   unread_count: number
-  otherParticipant?: {
+  participants: {
     id: string
-    full_name: string
+    full_name?: string
     avatar_url?: string
-    role: string
-  }
+    role?: string
+  }[]
 }
 
 export function useRealtimeMessaging(conversationId?: string) {
-  const { user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
-  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
+  const [isSending, setIsSending] = useState(false)
+  const { user, profile } = useAuth()
 
-  // Fetch conversations for the current user
+  // Fetch messages for a specific conversation
+  const fetchMessages = useCallback(
+    async (convoId: string) => {
+      if (!user) return
+
+      try {
+        setIsLoading(true)
+        const { data, error } = await supabase
+          .from("messages")
+          .select(`
+          *,
+          sender_profile:profiles!sender_id(full_name, avatar_url)
+        `)
+          .eq("conversation_id", convoId)
+          .order("created_at", { ascending: true })
+
+        if (error) {
+          console.error("Error fetching messages:", error)
+          return
+        }
+
+        setMessages(data || [])
+
+        // Mark messages as read
+        if (data && data.length > 0) {
+          const unreadMessages = data.filter((msg) => msg.recipient_id === user.id && msg.status !== "read")
+
+          if (unreadMessages.length > 0) {
+            await supabase
+              .from("messages")
+              .update({ status: "read" })
+              .in(
+                "id",
+                unreadMessages.map((msg) => msg.id),
+              )
+          }
+        }
+      } catch (error) {
+        console.error("Error in fetchMessages:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [user],
+  )
+
+  // Fetch all conversations for the current user
   const fetchConversations = useCallback(async () => {
-    if (!user?.id) return
+    if (!user) return
 
     try {
       setIsLoading(true)
 
-      const { data: conversationsData, error: conversationsError } = await supabase
+      // This is a simplified query - in a real app, you'd need a more complex query
+      // to get the actual conversations with the last message and unread count
+      const { data, error } = await supabase
         .from("conversations")
         .select(`
           *,
           participants:conversation_participants(
             user_id,
-            user:profiles(id, full_name, avatar_url, role)
+            profiles(id, full_name, avatar_url, role)
           )
         `)
-        .contains("participant_ids", [user.id])
-        .order("updated_at", { ascending: false })
+        .eq("conversation_participants.user_id", user.id)
 
-      if (conversationsError) throw conversationsError
+      if (error) {
+        console.error("Error fetching conversations:", error)
+        return
+      }
 
-      // Process conversations to get other participants
-      const processedConversations = conversationsData.map((conv: any) => {
-        const otherParticipants = conv.participants.filter((p: any) => p.user_id !== user.id)
+      // Transform the data to match our Conversation type
+      const formattedConversations = (data || []).map((convo) => {
+        // Filter out the current user from participants
+        const otherParticipants = convo.participants
+          .filter((p) => p.user_id !== user.id)
+          .map((p) => ({
+            id: p.profiles.id,
+            full_name: p.profiles.full_name,
+            avatar_url: p.profiles.avatar_url,
+            role: p.profiles.role,
+          }))
+
         return {
-          ...conv,
-          otherParticipant: otherParticipants[0]?.user || null,
-          unread_count: 0, // Will be updated by the unread count query
+          id: convo.id,
+          created_at: convo.created_at,
+          updated_at: convo.updated_at,
+          last_message: convo.last_message,
+          last_message_time: convo.last_message_time,
+          unread_count: convo.unread_count || 0,
+          participants: otherParticipants,
         }
       })
 
-      // Get unread counts for each conversation
-      const unreadCountPromises = processedConversations.map(async (conv: Conversation) => {
-        const { count } = await supabase
-          .from("messages")
-          .select("id", { count: "exact", head: false })
-          .eq("conversation_id", conv.id)
-          .eq("is_read", false)
-          .neq("sender_id", user.id)
-
-        return { conversationId: conv.id, count: count || 0 }
-      })
-
-      const unreadResults = await Promise.all(unreadCountPromises)
-      const unreadCountsMap: Record<string, number> = {}
-
-      unreadResults.forEach((result) => {
-        unreadCountsMap[result.conversationId] = result.count
-      })
-
-      setUnreadCounts(unreadCountsMap)
-
-      // Update conversations with unread counts
-      const conversationsWithUnread = processedConversations.map((conv: Conversation) => ({
-        ...conv,
-        unread_count: unreadCountsMap[conv.id] || 0,
-      }))
-
-      setConversations(conversationsWithUnread)
-
-      // Set active conversation if conversationId is provided
-      if (conversationId) {
-        const active = conversationsWithUnread.find((c) => c.id === conversationId) || null
-        setActiveConversation(active)
-      } else if (conversationsWithUnread.length > 0 && !activeConversation) {
-        setActiveConversation(conversationsWithUnread[0])
-      }
-    } catch (error: any) {
-      console.error("Error fetching conversations:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load conversations",
-        variant: "destructive",
-      })
+      setConversations(formattedConversations)
+    } catch (error) {
+      console.error("Error in fetchConversations:", error)
     } finally {
       setIsLoading(false)
     }
-  }, [user?.id, conversationId, activeConversation])
+  }, [user])
 
-  // Fetch messages for a conversation
-  const fetchMessages = useCallback(
-    async (convId: string) => {
-      if (!user?.id) return
-
-      try {
-        setIsLoading(true)
-
-        const { data, error } = await supabase
-          .from("messages")
-          .select(`
-          *,
-          sender:sender_id(id, full_name, avatar_url)
-        `)
-          .eq("conversation_id", convId)
-          .order("created_at", { ascending: true })
-
-        if (error) throw error
-
-        setMessages(data || [])
-
-        // Mark messages as read
-        await markMessagesAsRead(convId)
-      } catch (error: any) {
-        console.error("Error fetching messages:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load messages",
-          variant: "destructive",
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    },
-    [user?.id],
-  )
-
-  // Mark messages as read
-  const markMessagesAsRead = useCallback(
-    async (convId: string) => {
-      if (!user?.id) return
-
-      try {
-        const { error } = await supabase
-          .from("messages")
-          .update({ is_read: true, status: "read" })
-          .eq("conversation_id", convId)
-          .eq("is_read", false)
-          .neq("sender_id", user.id)
-
-        if (error) throw error
-
-        // Update unread counts
-        setUnreadCounts((prev) => ({
-          ...prev,
-          [convId]: 0,
-        }))
-
-        // Update conversations list
-        setConversations((prev) => prev.map((conv) => (conv.id === convId ? { ...conv, unread_count: 0 } : conv)))
-      } catch (error: any) {
-        console.error("Error marking messages as read:", error)
-      }
-    },
-    [user?.id],
-  )
-
-  // Send a message
+  // Send a new message
   const sendMessage = useCallback(
-    async (content: string, attachment?: File) => {
-      if (!user?.id || !activeConversation) return null
+    async (recipientId: string, content: string, convoId?: string, attachmentUrl?: string) => {
+      if (!user) return null
 
       try {
-        let attachmentUrl = null
-        let attachmentType = null
-        let attachmentName = null
+        setIsSending(true)
 
-        // Upload attachment if provided
-        if (attachment) {
-          const fileExt = attachment.name.split(".").pop()
-          const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`
-          const filePath = `message-attachments/${user.id}/${fileName}`
+        // If no conversation ID is provided, we need to create a new conversation
+        let conversationId = convoId
 
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from("attachments")
-            .upload(filePath, attachment)
+        if (!conversationId) {
+          // Create a new conversation
+          const { data: convoData, error: convoError } = await supabase
+            .from("conversations")
+            .insert({})
+            .select()
+            .single()
 
-          if (uploadError) throw uploadError
+          if (convoError) {
+            console.error("Error creating conversation:", convoError)
+            return null
+          }
 
-          const { data: urlData } = await supabase.storage.from("attachments").getPublicUrl(filePath)
+          conversationId = convoData.id
 
-          attachmentUrl = urlData.publicUrl
-          attachmentType = attachment.type
-          attachmentName = attachment.name
+          // Add participants to the conversation
+          await supabase.from("conversation_participants").insert([
+            { conversation_id: conversationId, user_id: user.id },
+            { conversation_id: conversationId, user_id: recipientId },
+          ])
         }
 
-        // Create new message with temporary ID
+        // Create a temporary ID for optimistic UI updates
         const tempId = `temp-${Date.now()}`
-        const newMessage = {
+
+        // Add message to local state immediately for optimistic UI
+        const newMessage: Message = {
           id: tempId,
-          conversation_id: activeConversation.id,
           sender_id: user.id,
+          recipient_id: recipientId,
+          conversation_id: conversationId,
           content,
-          created_at: new Date().toISOString(),
-          status: "sending" as MessageStatus,
-          is_read: false,
           attachment_url: attachmentUrl,
-          attachment_type: attachmentType,
-          attachment_name: attachmentName,
+          created_at: new Date().toISOString(),
+          status: "sending",
+          sender_profile: {
+            full_name: profile?.full_name,
+            avatar_url: profile?.avatar_url,
+          },
         }
 
-        // Add to local state immediately
         setMessages((prev) => [...prev, newMessage])
 
-        // Insert into database
+        // Send the message to the server
         const { data, error } = await supabase
           .from("messages")
           .insert({
-            conversation_id: activeConversation.id,
             sender_id: user.id,
+            recipient_id: recipientId,
+            conversation_id: conversationId,
             content,
-            status: "sent",
-            is_read: false,
             attachment_url: attachmentUrl,
-            attachment_type: attachmentType,
-            attachment_name: attachmentName,
+            status: "sent",
           })
           .select()
+          .single()
 
-        if (error) throw error
+        if (error) {
+          console.error("Error sending message:", error)
 
-        // Update conversation's last message and time
+          // Remove the optimistic message on error
+          setMessages((prev) => prev.filter((msg) => msg.id !== tempId))
+          toast({
+            title: "Failed to send message",
+            description: "Please try again later",
+            variant: "destructive",
+          })
+          return null
+        }
+
+        // Replace the temporary message with the real one
+        setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)))
+
+        // Update the conversation's last message
         await supabase
           .from("conversations")
           .update({
             last_message: content,
             last_message_time: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
           })
-          .eq("id", activeConversation.id)
+          .eq("id", conversationId)
 
-        // Replace temporary message with actual message
-        if (data && data[0]) {
-          setMessages((prev) =>
-            prev.map((msg) => (msg.id === tempId ? { ...data[0], status: "sent" as MessageStatus } : msg)),
-          )
-          return data[0]
-        }
-
-        return null
-      } catch (error: any) {
-        console.error("Error sending message:", error)
-
-        // Update message status to show error
-        setMessages((prev) => prev.map((msg) => (msg.status === "sending" ? { ...msg, status: "error" as any } : msg)))
-
+        return data
+      } catch (error) {
+        console.error("Error in sendMessage:", error)
         toast({
           title: "Error",
           description: "Failed to send message",
           variant: "destructive",
         })
-
         return null
+      } finally {
+        setIsSending(false)
       }
     },
-    [user?.id, activeConversation],
+    [user, profile],
   )
 
-  // Create a new conversation
-  const createConversation = useCallback(
-    async (participantId: string, initialMessage: string) => {
-      if (!user?.id) return null
-
-      try {
-        // Check if conversation already exists
-        const { data: existingConvs } = await supabase
-          .from("conversations")
-          .select("*")
-          .contains("participant_ids", [user.id, participantId])
-
-        if (existingConvs && existingConvs.length > 0) {
-          // Conversation exists, return it
-          setActiveConversation(existingConvs[0])
-          await fetchMessages(existingConvs[0].id)
-
-          // Send initial message if provided
-          if (initialMessage) {
-            await sendMessage(initialMessage)
-          }
-
-          return existingConvs[0]
-        }
-
-        // Create new conversation
-        const { data: newConv, error: convError } = await supabase
-          .from("conversations")
-          .insert({
-            participant_ids: [user.id, participantId],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .select()
-
-        if (convError) throw convError
-
-        if (!newConv || newConv.length === 0) {
-          throw new Error("Failed to create conversation")
-        }
-
-        // Add participants
-        const participants = [
-          { conversation_id: newConv[0].id, user_id: user.id },
-          { conversation_id: newConv[0].id, user_id: participantId },
-        ]
-
-        const { error: partError } = await supabase.from("conversation_participants").insert(participants)
-
-        if (partError) throw partError
-
-        // Get participant details
-        const { data: participantData } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url, role")
-          .eq("id", participantId)
-          .single()
-
-        // Create conversation object with participant
-        const conversation = {
-          ...newConv[0],
-          otherParticipant: participantData,
-          unread_count: 0,
-        }
-
-        // Update state
-        setConversations((prev) => [conversation, ...prev])
-        setActiveConversation(conversation)
-
-        // Send initial message if provided
-        if (initialMessage) {
-          await sendMessage(initialMessage)
-        }
-
-        return conversation
-      } catch (error: any) {
-        console.error("Error creating conversation:", error)
-        toast({
-          title: "Error",
-          description: "Failed to create conversation",
-          variant: "destructive",
-        })
-        return null
-      }
-    },
-    [user?.id, fetchMessages, sendMessage],
-  )
-
-  // Set up real-time subscriptions
+  // Set up real-time subscription
   useEffect(() => {
-    if (!user?.id) return
+    if (!user) return
 
-    // Set up subscription for new messages
-    const messagesChannel = supabase
-      .channel("messages-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const newMessage = payload.new as Message
+    // Subscribe to new messages
+    const channel = supabase
+      .channel("messages")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const newMessage = payload.new as Message
 
-          // Only process if we're not the sender
-          if (newMessage.sender_id !== user.id) {
-            // If this is for the active conversation, add it to messages
-            if (activeConversation?.id === newMessage.conversation_id) {
-              // Get sender details
-              supabase
-                .from("profiles")
-                .select("id, full_name, avatar_url")
-                .eq("id", newMessage.sender_id)
-                .single()
-                .then(({ data: sender }) => {
-                  setMessages((prev) => [...prev, { ...newMessage, sender }])
+        // Only add the message if it's for the current conversation
+        // or if it's sent to or from the current user
+        if (
+          (conversationId && newMessage.conversation_id === conversationId) ||
+          (!conversationId && (newMessage.recipient_id === user.id || newMessage.sender_id === user.id))
+        ) {
+          // Fetch the sender profile
+          supabase
+            .from("profiles")
+            .select("full_name, avatar_url")
+            .eq("id", newMessage.sender_id)
+            .single()
+            .then(({ data }) => {
+              if (data) {
+                newMessage.sender_profile = data
+              }
 
-                  // Mark as read immediately if this is the active conversation
-                  markMessagesAsRead(newMessage.conversation_id)
-                })
-            } else {
-              // Update unread count for this conversation
-              setUnreadCounts((prev) => ({
-                ...prev,
-                [newMessage.conversation_id]: (prev[newMessage.conversation_id] || 0) + 1,
-              }))
+              setMessages((prev) => {
+                // Check if we already have this message (to avoid duplicates)
+                const exists = prev.some((msg) => msg.id === newMessage.id)
+                if (exists) return prev
+                return [...prev, newMessage]
+              })
 
-              // Update conversations list
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === newMessage.conversation_id
-                    ? {
-                        ...conv,
-                        last_message: newMessage.content,
-                        last_message_time: newMessage.created_at,
-                        unread_count: (conv.unread_count || 0) + 1,
-                      }
-                    : conv,
-                ),
-              )
-            }
+              // If the message is for the current user, mark it as delivered
+              if (newMessage.recipient_id === user.id) {
+                supabase
+                  .from("messages")
+                  .update({ status: conversationId ? "read" : "delivered" })
+                  .eq("id", newMessage.id)
+              }
+            })
+        }
 
-            // Show notification
-            if (Notification.permission === "granted") {
-              // Get sender name
-              supabase
-                .from("profiles")
-                .select("full_name")
-                .eq("id", newMessage.sender_id)
-                .single()
-                .then(({ data }) => {
-                  const senderName = data?.full_name || "Someone"
-                  new Notification("New Message", {
-                    body: `${senderName}: ${newMessage.content.substring(0, 50)}${newMessage.content.length > 50 ? "..." : ""}`,
-                  })
-                })
-            }
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const updatedMessage = payload.new as Message
+        // Update conversations list if needed
+        if (!conversationId) {
+          fetchConversations()
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (payload) => {
+        const updatedMessage = payload.new as Message
 
-          // Update message status
-          setMessages((prev) => prev.map((msg) => (msg.id === updatedMessage.id ? { ...msg, ...updatedMessage } : msg)))
-        },
-      )
+        // Update the message status in our local state
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === updatedMessage.id ? { ...msg, status: updatedMessage.status } : msg)),
+        )
+      })
       .subscribe()
 
-    // Set up subscription for conversation changes
-    const conversationsChannel = supabase
-      .channel("conversations-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversations",
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            // New conversation - check if we're a participant
-            const newConv = payload.new as any
-            if (newConv.participant_ids.includes(user.id)) {
-              // Refresh conversations to get the new one with all details
-              fetchConversations()
-            }
-          } else if (payload.eventType === "UPDATE") {
-            // Updated conversation
-            const updatedConv = payload.new as any
-
-            // Update in our list
-            setConversations((prev) =>
-              prev.map((conv) => (conv.id === updatedConv.id ? { ...conv, ...updatedConv } : conv)),
-            )
-          }
-        },
-      )
-      .subscribe()
-
-    // Clean up subscriptions
-    return () => {
-      supabase.removeChannel(messagesChannel)
-      supabase.removeChannel(conversationsChannel)
-    }
-  }, [user?.id, activeConversation?.id, fetchConversations, markMessagesAsRead])
-
-  // Initial data fetch
-  useEffect(() => {
-    if (user?.id) {
+    // Fetch initial data
+    if (conversationId) {
+      fetchMessages(conversationId)
+    } else {
       fetchConversations()
     }
-  }, [user?.id, fetchConversations])
 
-  // Fetch messages when active conversation changes
-  useEffect(() => {
-    if (activeConversation?.id) {
-      fetchMessages(activeConversation.id)
+    return () => {
+      supabase.removeChannel(channel)
     }
-  }, [activeConversation?.id, fetchMessages])
-
-  // Request notification permission
-  useEffect(() => {
-    if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission()
-    }
-  }, [])
+  }, [user, conversationId, fetchMessages, fetchConversations])
 
   return {
     messages,
     conversations,
     isLoading,
-    activeConversation,
-    setActiveConversation,
+    isSending,
     sendMessage,
-    createConversation,
-    markMessagesAsRead,
-    unreadCounts,
-    refreshConversations: fetchConversations,
+    fetchMessages,
+    fetchConversations,
   }
 }
