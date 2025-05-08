@@ -9,12 +9,23 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: ["placeholder.svg", "v0.blob.com"],
+    domains: ["localhost", "v0.blob.com"],
     unoptimized: true,
   },
   experimental: {
     // Force npm to use legacy-peer-deps during build
     forceSwcTransforms: true,
+    serverActions: true,
+  },
+  output: "standalone",
+  async redirects() {
+    return [
+      {
+        source: "/client",
+        destination: "/client/dashboard",
+        permanent: true,
+      },
+    ]
   },
 }
 

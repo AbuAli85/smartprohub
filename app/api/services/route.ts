@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import type { Database } from "@/lib/supabase/database.types"
 
 // Create a Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const supabase = createClient(supabaseUrl, supabaseKey)
+const supabase = createClient<Database>(supabaseUrl, supabaseKey)
 
 // Add CORS headers helper
 const corsHeaders = {
@@ -25,30 +26,23 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const providerId = searchParams.get("providerId")
 
-    if (!providerId) {
-      console.log("GET /api/services - Missing providerId parameter")
-      return NextResponse.json(
-        { error: "Provider ID is required" },
-        {
-          status: 400,
-          headers: corsHeaders,
-        },
-      )
-    }
+    let query = supabase.from("services").select("*")
 
-    console.log(`GET /api/services - Fetching services for provider: ${providerId}`)
+    // If providerId is provided, filter by it
+    if (providerId) {
+      console.log(`GET /api/services - Fetching services for provider: ${providerId}`)
+      query = query.eq("provider_id", providerId)
+    } else {
+      console.log("GET /api/services - Fetching all services (no provider filter)")
+    }
 
     // Set a timeout for the database query
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error("Database query timed out")), 15000)
     })
 
-    // Create the database query
-    const queryPromise = supabase
-      .from("provider_services")
-      .select("*")
-      .eq("provider_id", providerId)
-      .order("created_at", { ascending: false })
+    // Execute the query with ordering
+    const queryPromise = query.order("created_at", { ascending: false })
 
     // Race the query against the timeout
     const result = await Promise.race([queryPromise, timeoutPromise])
@@ -110,7 +104,7 @@ export async function POST(request: Request) {
 
     // Create the service
     const { data, error } = await supabase
-      .from("provider_services")
+      .from("services")
       .insert({
         provider_id: body.providerId,
         name: body.name,

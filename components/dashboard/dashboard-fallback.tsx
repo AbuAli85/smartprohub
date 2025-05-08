@@ -1,10 +1,9 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, RefreshCw } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { AlertTriangle, Database, ArrowRight } from "lucide-react"
 import Link from "next/link"
 
 interface DashboardFallbackProps {
@@ -14,51 +13,44 @@ interface DashboardFallbackProps {
 }
 
 export function DashboardFallback({
-  error = "We're having trouble loading your dashboard data.",
-  title = "Dashboard Unavailable",
-  description = "We're experiencing some technical difficulties. Please try again later.",
+  error = "Database tables not set up properly.",
+  title = "Database Setup Required",
+  description = "Your database needs to be initialized before you can use the dashboard.",
 }: DashboardFallbackProps) {
-  const router = useRouter()
-
   return (
-    <div className="container mx-auto py-8">
-      <Card className="w-full max-w-3xl mx-auto">
+    <div className="container mx-auto py-10">
+      <Alert variant="destructive" className="mb-6">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Database Error</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+
+      <Card className="max-w-2xl mx-auto">
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            {title}
+          </CardTitle>
           <CardDescription>{description}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Error Loading Dashboard</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Troubleshooting Steps:</h3>
-            <ul className="list-disc pl-5 text-sm space-y-1">
-              <li>Check your internet connection</li>
-              <li>Verify that you're logged in correctly</li>
-              <li>Run a system health check to identify issues</li>
-              <li>Contact support if the problem persists</li>
-            </ul>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button onClick={() => router.refresh()} className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Refresh Dashboard
-            </Button>
-
-            <Button variant="outline" asChild>
-              <Link href="/debug/system">Run System Check</Link>
-            </Button>
-
-            <Button variant="secondary" asChild>
-              <Link href="/auth/debug">Check Authentication</Link>
-            </Button>
-          </div>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            We've detected that your database tables haven't been set up yet. Before you can use the SmartPRO Business
+            Services Hub, you need to initialize your database.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Our setup wizard will guide you through the process of creating the necessary tables and adding sample data
+            to get you started.
+          </p>
         </CardContent>
+        <CardFooter>
+          <Button asChild className="w-full flex items-center justify-center gap-2">
+            <Link href="/setup/database">
+              Go to Database Setup
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Link>
+          </Button>
+        </CardFooter>
       </Card>
     </div>
   )

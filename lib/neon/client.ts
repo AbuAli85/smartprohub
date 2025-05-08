@@ -32,10 +32,16 @@ export const executeQuery = async (text: string, params: any[] = []) => {
   try {
     console.log("Executing query:", text, "with params:", params)
     const startTime = Date.now()
-    const result = await sql(text, params)
+
+    // Use sql.query for parameterized queries instead of direct function call
+    const result = await sql.query(text, params)
+
     const duration = Date.now() - startTime
     console.log(`Query executed in ${duration}ms`)
-    return { rows: result, rowCount: result.length }
+
+    // Ensure result is always an array
+    const rows = Array.isArray(result) ? result : []
+    return { rows, rowCount: rows.length }
   } catch (error) {
     console.error("Database query error:", error)
     return { rows: [], rowCount: 0, error }
@@ -46,11 +52,16 @@ export const executeQuery = async (text: string, params: any[] = []) => {
 export const checkDatabaseConnection = async () => {
   try {
     const startTime = Date.now()
+    // Use tagged template literal syntax
     const result = await sql`SELECT 1 as connection_test`
     const duration = Date.now() - startTime
+
+    // Ensure result is properly handled
+    const isConnected = result && Array.isArray(result) && result.length > 0
+
     return {
-      status: "connected",
-      message: `Connection successful (${duration}ms)`,
+      status: isConnected ? "connected" : "error",
+      message: isConnected ? `Connection successful (${duration}ms)` : "Connection test returned no results",
       duration,
     }
   } catch (error: any) {
@@ -93,15 +104,21 @@ export const createNeonClient = () => {
       return executeQuery(text, params)
     },
 
-    // Execute a raw SQL query
+    // Execute a raw SQL query - now using sql.query instead of direct function call
     execute: async (query: string) => {
       try {
         console.log("Executing raw SQL:", query)
         const startTime = Date.now()
-        const result = await sql(query)
+
+        // Use sql.query for raw queries
+        const result = await sql.query(query)
+
         const duration = Date.now() - startTime
         console.log(`SQL executed in ${duration}ms`)
-        return { rows: result, rowCount: result.length }
+
+        // Ensure result is always an array
+        const rows = Array.isArray(result) ? result : []
+        return { rows, rowCount: rows.length }
       } catch (error) {
         console.error("Database execution error:", error)
         return { rows: [], rowCount: 0, error }

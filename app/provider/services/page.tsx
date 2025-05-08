@@ -96,32 +96,6 @@ export default function ServicesPage() {
     getUserId()
   }, [router])
 
-  // Set up auth state change listener
-  useEffect(() => {
-    if (typeof window === "undefined") return
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event)
-
-      if (event === "SIGNED_IN" && session?.user) {
-        console.log("User signed in:", session.user.id)
-        setUserId(session.user.id)
-        setAuthError(null)
-      } else if (event === "SIGNED_OUT") {
-        console.log("User signed out")
-        setUserId(null)
-        setAuthError("You have been signed out. Please log in again.")
-
-        // Redirect to login
-        router.push("/auth/login?redirect=/provider/services")
-      }
-    })
-
-    return () => {
-      authListener.subscription.unsubscribe()
-    }
-  }, [router])
-
   const fetchServices = async () => {
     if (!userId) {
       console.log("No user ID available, skipping service fetch")
@@ -136,7 +110,7 @@ export default function ServicesPage() {
 
       // Check if the table exists first
       try {
-        const { data: tableCheck, error: tableError } = await supabase.from("provider_services").select("id").limit(1)
+        const { data: tableCheck, error: tableError } = await supabase.from("services").select("id").limit(1)
 
         if (tableError) {
           if (tableError.code === "42P01") {
@@ -152,14 +126,20 @@ export default function ServicesPage() {
 
       // Fetch services
       const { data, error } = await supabase
-        .from("provider_services")
+        .from("services")
         .select("*")
         .eq("provider_id", userId)
         .order("created_at", { ascending: false })
 
       if (error) {
         console.error("Error fetching services:", error)
-        setDbError(`Database error: ${error.message}`)
+
+        // Check if it's a missing column error
+        if (error.message.includes('column "provider_id" does not exist')) {
+          setDbError("The provider_id column is missing. Please run the database column fix.")
+        } else {
+          setDbError(`Database error: ${error.message}`)
+        }
         setServices([])
       } else {
         console.log("Services fetched:", data)
@@ -262,7 +242,7 @@ export default function ServicesPage() {
         // Update existing service
         console.log("Updating service:", selectedService.id)
         const { data, error } = await supabase
-          .from("provider_services")
+          .from("services")
           .update({
             ...serviceData,
             updated_at: new Date().toISOString(),
@@ -281,7 +261,7 @@ export default function ServicesPage() {
         // Create new service
         console.log("Creating new service")
         const { data, error } = await supabase
-          .from("provider_services")
+          .from("services")
           .insert({
             ...serviceData,
             created_at: new Date().toISOString(),
@@ -335,7 +315,7 @@ export default function ServicesPage() {
       setIsSubmitting(true)
       console.log("Deleting service:", selectedService.id)
 
-      const { error } = await supabase.from("provider_services").delete().eq("id", selectedService.id)
+      const { error } = await supabase.from("services").delete().eq("id", selectedService.id)
 
       if (error) {
         console.error("Error deleting service:", error)
@@ -362,70 +342,36 @@ export default function ServicesPage() {
     }
   }
 
-  const handleRefreshSession = async () => {
-    try {
-      setLoading(true)
-      setAuthError(null)
-
-      // Force refresh the session
-      const { data, error } = await supabase.auth.refreshSession()
-
-      if (error) {
-        console.error("Error refreshing session:", error)
-        setAuthError(`Failed to refresh session: ${error.message}`)
-        return
-      }
-
-      if (data.session?.user) {
-        console.log("Session refreshed:", data.session.user.id)
-        setUserId(data.session.user.id)
-        fetchServices()
-      } else {
-        setAuthError("No active session found. Please log in again.")
-        setTimeout(() => {
-          router.push("/auth/login?redirect=/provider/services")
-        }, 2000)
-      }
-    } catch (error: any) {
-      console.error("Error in refresh:", error)
-      setAuthError(`Error refreshing session: ${error.message}`)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRunDatabaseSetup = async () => {
+  const handleFixRelationships = async () => {
     try {
       setLoading(true)
       setDbError(null)
 
-      // Execute the SQL to create the table
-      const response = await fetch("/api/setup/database", {
+      const response = await fetch("/api/setup/database/fix-relationships", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ setup: "provider_services" }),
       })
 
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to set up database")
+        throw new Error(result.error || "Failed to fix database relationships")
       }
 
       toast({
         title: "Success",
-        description: "Database setup completed successfully",
+        description: "Database relationships fixed successfully",
       })
 
       // Refresh services
       fetchServices()
     } catch (error: any) {
-      console.error("Error setting up database:", error)
+      console.error("Error fixing relationships:", error)
       toast({
         title: "Error",
-        description: `Failed to set up database: ${error.message}`,
+        description: `Failed to fix relationships: ${error.message}`,
         variant: "destructive",
       })
     } finally {
@@ -487,13 +433,9 @@ export default function ServicesPage() {
           <AlertDescription>
             {authError}
             <div className="mt-2">
-              <Button variant="outline" size="sm" onClick={handleRefreshSession}>
-                Refresh Session
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="ml-2"
                 onClick={() => router.push("/auth/login?redirect=/provider/services")}
               >
                 Go to Login
@@ -511,11 +453,11 @@ export default function ServicesPage() {
           <AlertDescription>
             {dbError}
             <div className="mt-2">
-              <Button variant="outline" size="sm" onClick={handleRunDatabaseSetup}>
-                Run Database Setup
+              <Button variant="outline" size="sm" onClick={handleFixRelationships}>
+                Fix Database Relationships
               </Button>
-              <Button variant="outline" size="sm" className="ml-2" onClick={() => router.push("/debug/supabase")}>
-                Debug Connection
+              <Button variant="outline" size="sm" className="ml-2" onClick={() => router.push("/setup/database")}>
+                Database Setup
               </Button>
             </div>
           </AlertDescription>

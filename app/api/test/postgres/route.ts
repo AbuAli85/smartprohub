@@ -3,14 +3,21 @@ import { sql } from "@/lib/neon/client"
 
 export async function GET() {
   try {
-    // Simple query to test connection
-    const result = await sql.query("SELECT current_timestamp as server_time")
+    // Use tagged template literal syntax for SQL query
+    const result = await sql`
+      SELECT 
+        NOW() as server_time, 
+        current_database() as database_name,
+        current_user as database_user
+    `
 
     return NextResponse.json({
       status: "success",
       message: "Database connection successful",
       timestamp: new Date().toISOString(),
-      server_time: result.rows[0]?.server_time,
+      server_time: result[0]?.server_time || new Date().toISOString(),
+      database_name: result[0]?.database_name || "unknown",
+      database_user: result[0]?.database_user || "unknown",
       connection: "Neon PostgreSQL",
     })
   } catch (error: any) {
@@ -19,7 +26,7 @@ export async function GET() {
     return NextResponse.json(
       {
         status: "error",
-        message: "Database connection failed",
+        message: "Database connection test failed",
         error: error.message,
         timestamp: new Date().toISOString(),
       },

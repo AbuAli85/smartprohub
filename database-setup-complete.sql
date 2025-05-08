@@ -1,22 +1,3 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
-import fs from "fs"
-import path from "path"
-
-export async function POST() {
-  try {
-    // Connect to the database
-    const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || "")
-
-    // Read the SQL file
-    const sqlFilePath = path.join(process.cwd(), "database-setup-complete.sql")
-    let sqlContent
-
-    try {
-      sqlContent = fs.readFileSync(sqlFilePath, "utf8")
-    } catch (error) {
-      // If file doesn't exist, use the hardcoded SQL
-      sqlContent = `
 -- Create extension for UUID generation if not exists
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -214,26 +195,3 @@ VALUES
   ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000005'),
   ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006')
 ON CONFLICT (provider_id, client_id) DO NOTHING;
-      `
-    }
-
-    // Split the SQL content into individual statements
-    const statements = sqlContent.split(";").filter((stmt) => stmt.trim() !== "")
-
-    // Execute each statement separately
-    for (const statement of statements) {
-      try {
-        // Use sql.query instead of sql.execute
-        await sql.query(statement)
-      } catch (error) {
-        console.error(`Error executing statement: ${statement.substring(0, 100)}...`, error)
-        // Continue with other statements even if one fails
-      }
-    }
-
-    return NextResponse.json({ success: true, message: "Database tables created successfully" })
-  } catch (error: any) {
-    console.error("Error creating tables:", error)
-    return NextResponse.json({ error: error.message || "Failed to create database tables" }, { status: 500 })
-  }
-}
