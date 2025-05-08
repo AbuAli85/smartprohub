@@ -12,6 +12,10 @@ const nextConfig = {
     domains: ["placeholder.svg", "v0.blob.com"],
     unoptimized: true,
   },
+  experimental: {
+    // Force npm to use legacy-peer-deps during build
+    forceSwcTransforms: true,
+  },
 }
 
 module.exports = nextConfig

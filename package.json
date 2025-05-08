@@ -68,7 +68,9 @@
     "@upstash/redis": "latest",
     "@ai-sdk/xai": "latest",
     "@ai-sdk/deepinfra": "latest",
-    "@neondatabase/serverless": "latest"
+    "@neondatabase/serverless": "latest",
+    "fs": "latest",
+    "path": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
