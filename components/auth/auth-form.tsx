@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClientComponentClient, createClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,6 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import Link from "next/link"
 import type { UserRole } from "@/lib/supabase/database.types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { Database } from "@/lib/supabase/database.types"
 
 type AuthFormProps = {
   type?: "login" | "register"
@@ -32,6 +33,7 @@ function AuthForm({ type = "login" }: AuthFormProps) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<"login" | "register">(type)
+  const [error, setError] = useState<string | null>(null)
 
   const supabase = createClientComponentClient()
 
@@ -39,23 +41,22 @@ function AuthForm({ type = "login" }: AuthFormProps) {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
+    setError(null)
 
     try {
-      // Sign in with email and password
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const supabase = createClient<Database>(supabaseUrl, supabaseKey)
+
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (authError) {
-        throw authError
+      if (error) {
+        throw error
       }
 
-      if (!authData.user) {
-        throw new Error("Authentication successful but no user returned")
-      }
-
-      // Show success message
       setMessage({
         type: "success",
         text: "Login successful! Redirecting...",
@@ -63,12 +64,13 @@ function AuthForm({ type = "login" }: AuthFormProps) {
 
       // Simple redirect to dashboard - let the server handle role-based redirects
       window.location.href = redirectedFrom || "/dashboard"
-    } catch (error: any) {
-      console.error("Login error:", error)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
       setMessage({
         type: "error",
-        text: error.message || "An error occurred during login",
+        text: error?.message || "An error occurred during login",
       })
+    } finally {
       setLoading(false)
     }
   }
@@ -171,6 +173,7 @@ function AuthForm({ type = "login" }: AuthFormProps) {
             <TabsContent value="login" className="mt-0">
               <form onSubmit={handleLogin}>
                 <CardContent className="space-y-4 pt-0">
+                  {error && <div className="text-red-500">{error}</div>}
                   {message && (
                     <Alert variant={message.type === "error" ? "destructive" : "default"}>
                       <AlertDescription>{message.text}</AlertDescription>

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
+// Middleware function that doesn't use any App Router specific features
 export function middleware(request: NextRequest) {
-  // Simple middleware that doesn't use any App Router specific features
+  // Simple middleware implementation
   return NextResponse.next()
 }
 
@@ -10,6 +11,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Add paths that need middleware here
-    // Example: '/dashboard/:path*'
+    // Exclude static files and API routes
+    "/((?!_next/static|_next/image|favicon.ico|api/).*)",
   ],
 }

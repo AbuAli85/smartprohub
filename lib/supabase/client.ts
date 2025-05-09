@@ -19,6 +19,14 @@ export function isSupabaseConfigured(): boolean {
   }
 }
 
+// Create a client-side Supabase client
+export function createBrowserSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+  return createClient<Database>(supabaseUrl, supabaseKey)
+}
+
 // Create a singleton instance of the Supabase client
 let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null
 
