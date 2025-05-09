@@ -1,33 +1,36 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
 export async function GET(request: Request) {
   try {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    // Get the token from the Authorization header
+    const authHeader = request.headers.get("Authorization")
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null
 
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.getSession()
-
-    if (error) {
-      return NextResponse.json(
-        {
-          status: "error",
-          message: "Failed to get session",
-          error: error.message,
-        },
-        { status: 500 },
-      )
-    }
-
-    if (!session) {
+    if (!token) {
       return NextResponse.json(
         {
           status: "unauthenticated",
-          message: "No active session found",
+          message: "No token provided",
+        },
+        { status: 401 },
+      )
+    }
+
+    // Create a direct Supabase client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // Verify the token
+    const { data, error } = await supabase.auth.getUser(token)
+
+    if (error || !data.user) {
+      return NextResponse.json(
+        {
+          status: "unauthenticated",
+          message: "Invalid token",
+          error: error?.message,
         },
         { status: 401 },
       )
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role, full_name, email, avatar_url")
-      .eq("id", session.user.id)
+      .eq("id", data.user.id)
       .single()
 
     if (profileError && profileError.code !== "PGRST116") {
@@ -47,16 +50,12 @@ export async function GET(request: Request) {
     return NextResponse.json({
       status: "authenticated",
       user: {
-        id: session.user.id,
-        email: session.user.email,
-        role: profile?.role || session.user.user_metadata?.role || null,
-        name: profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || null,
+        id: data.user.id,
+        email: data.user.email,
+        role: profile?.role || data.user.user_metadata?.role || null,
+        name: profile?.full_name || data.user.user_metadata?.full_name || data.user.user_metadata?.name || null,
         avatar_url:
-          profile?.avatar_url || session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture || null,
-      },
-      session: {
-        expires: new Date(session.expires_at! * 1000).toISOString(),
-        expiresIn: session.expires_in,
+          profile?.avatar_url || data.user.user_metadata?.avatar_url || data.user.user_metadata?.picture || null,
       },
     })
   } catch (error) {
