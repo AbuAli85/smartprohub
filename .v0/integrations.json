@@ -1,0 +1,9 @@
+{
+  "integrations": [
+    {
+      "name": "upstash",
+      "type": "redis",
+      "status": "active"
+    }
+  ]
+}

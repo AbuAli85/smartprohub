@@ -1,5 +1,6 @@
 import { DashboardSettings } from "@/components/dashboard/dashboard-settings"
 import { DataExport } from "@/components/dashboard/data-export"
+import { RedisConfiguration } from "@/components/settings/redis-configuration"
 
 export default function DashboardSettingsPage() {
   return (
@@ -10,6 +11,13 @@ export default function DashboardSettingsPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <DashboardSettings />
         <DataExport />
+      </div>
+
+      <h2 className="text-2xl font-bold mt-8">Integrations</h2>
+      <p className="text-muted-foreground">Configure external service integrations</p>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <RedisConfiguration />
       </div>
     </div>
   )

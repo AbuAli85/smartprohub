@@ -1,0 +1,10 @@
+{
+  "integrations": [
+    {
+      "name": "upstash",
+      "type": "redis",
+      "status": "active",
+      "version": "1.0.0"
+    }
+  ]
+}

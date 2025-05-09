@@ -1,115 +1,56 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useState, useEffect } from "react"
+import { getSessionTimeRemaining, refreshSession } from "@/lib/session-manager"
+import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ReloadIcon } from "@radix-ui/react-icons"
-import { toast } from "@/components/ui/use-toast"
 
-interface SessionTimeoutWarningProps {
-  warningThreshold?: number // Time in ms before expiry to show warning
-  checkInterval?: number // Time in ms between checks
-}
-
-export function SessionTimeoutWarning({
-  warningThreshold = 5 * 60 * 1000, // 5 minutes by default
-  checkInterval = 60 * 1000, // 1 minute by default
-}: SessionTimeoutWarningProps) {
-  const { session, refreshSession } = useAuth()
-  const [showWarning, setShowWarning] = useState(false)
+export function SessionTimeoutWarning() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showWarning, setShowWarning] = useState(false)
 
-  // Calculate time remaining in session
-  const calculateTimeRemaining = useCallback(() => {
-    if (!session || !session.expires_at) return null
-
-    const expiresAt = session.expires_at * 1000 // Convert to milliseconds
-    const now = Date.now()
-    return Math.max(0, expiresAt - now)
-  }, [session])
-
-  // Handle session refresh
-  const handleRefreshSession = async () => {
-    setIsRefreshing(true)
-    try {
-      await refreshSession()
-      setShowWarning(false)
-      toast({
-        title: "Session refreshed",
-        description: "Your session has been successfully extended.",
-      })
-    } catch (error) {
-      console.error("Error refreshing session:", error)
-      toast({
-        title: "Session refresh failed",
-        description: "Failed to refresh your session. Please try logging in again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
-
-  // Check session expiry
   useEffect(() => {
-    if (!session) return
-
-    const checkSessionExpiry = () => {
-      const remaining = calculateTimeRemaining()
+    // Check session time remaining every minute
+    const checkSessionTime = () => {
+      const remaining = getSessionTimeRemaining()
       setTimeRemaining(remaining)
 
-      if (remaining !== null && remaining < warningThreshold) {
+      // Show warning if less than 5 minutes remaining
+      if (remaining !== null && remaining < 300000) {
         setShowWarning(true)
       } else {
         setShowWarning(false)
       }
     }
 
-    // Check immediately
-    checkSessionExpiry()
+    // Initial check
+    checkSessionTime()
 
-    // Set up interval for checking
-    const intervalId = setInterval(checkSessionExpiry, checkInterval)
+    // Set up interval
+    const intervalId = setInterval(checkSessionTime, 60000)
 
-    return () => {
-      clearInterval(intervalId)
-    }
-  }, [session, calculateTimeRemaining, warningThreshold, checkInterval])
+    return () => clearInterval(intervalId)
+  }, [])
 
-  // Format time remaining for display
-  const formatTimeRemaining = (ms: number) => {
-    if (ms === null) return "Unknown"
-
-    const minutes = Math.floor(ms / 60000)
-    const seconds = Math.floor((ms % 60000) / 1000)
-
-    return `${minutes}m ${seconds}s`
+  const handleRefresh = async () => {
+    await refreshSession()
+    setShowWarning(false)
+    // Check time remaining again
+    const remaining = getSessionTimeRemaining()
+    setTimeRemaining(remaining)
   }
 
-  if (!showWarning || !timeRemaining) return null
+  if (!showWarning) return null
 
   return (
-    <Alert className="fixed bottom-4 right-4 w-96 z-50 bg-yellow-50 border-yellow-200 shadow-lg">
-      <AlertTitle className="text-yellow-800">Session Expiring Soon</AlertTitle>
-      <AlertDescription className="text-yellow-700">
-        <p className="mb-2">
-          Your session will expire in {formatTimeRemaining(timeRemaining)}. Would you like to extend your session?
-        </p>
-        <Button
-          onClick={handleRefreshSession}
-          disabled={isRefreshing}
-          className="bg-yellow-600 hover:bg-yellow-700 text-white"
-        >
-          {isRefreshing ? (
-            <>
-              <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />
-              Refreshing...
-            </>
-          ) : (
-            "Extend Session"
-          )}
+    <Alert variant="warning" className="fixed bottom-4 right-4 w-auto max-w-md z-50 shadow-lg">
+      <AlertCircle className="h-4 w-4" />
+      <AlertTitle>Session Expiring Soon</AlertTitle>
+      <AlertDescription className="flex flex-col gap-2">
+        <p>Your session will expire in {timeRemaining ? Math.ceil(timeRemaining / 60000) : "a few"} minutes.</p>
+        <Button size="sm" onClick={handleRefresh}>
+          Refresh Session
         </Button>
       </AlertDescription>
     </Alert>

@@ -4,6 +4,10 @@ import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { User, Session } from "@supabase/supabase-js"
+import { getCache, setCache, removeCache } from "@/lib/cache-manager"
+import { measure } from "@/lib/performance-monitoring"
+import { withRetry } from "@/lib/retry-mechanism"
+import { getStoredUser, storeUser, checkSession, refreshSession } from "@/lib/session-manager"
 
 type Profile = {
   id: string
@@ -18,8 +22,10 @@ type AuthContextType = {
   session: Session | null
   profile: Profile | null
   isLoading: boolean
+  isInitialized: boolean
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
+  refreshProfile: () => Promise<Profile | null>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,51 +33,82 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   profile: null,
   isLoading: true,
+  isInitialized: false,
   signOut: async () => {},
   refreshSession: async () => {},
+  refreshProfile: async () => null,
 })
+
+// Cache keys
+const PROFILE_CACHE_PREFIX = "profile_"
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [initAttempted, setInitAttempted] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
 
-  // Fetch user profile
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+  // Fetch user profile with caching
+  const fetchProfile = async (userId: string): Promise<Profile | null> => {
+    return await measure("fetchProfile", async () => {
+      try {
+        // Check cache first
+        const cacheKey = `${PROFILE_CACHE_PREFIX}${userId}`
+        const cachedProfile = getCache<Profile>(cacheKey)
 
-      if (error) {
-        console.error("Error fetching profile:", error)
+        if (cachedProfile) {
+          console.debug("Using cached profile data")
+          return cachedProfile
+        }
+
+        // Fetch from Supabase with retry
+        const { data, error } = await withRetry(
+          () =>
+            supabase
+              .from("profiles")
+              .select("id, full_name, avatar_url, email, role") // Only select needed fields
+              .eq("id", userId)
+              .single(),
+          {
+            maxRetries: 2,
+            retryableErrors: ["network", "timeout"],
+          },
+        )
+
+        if (error) {
+          console.warn("Error fetching profile:", error.message)
+          return null
+        }
+
+        // Cache the profile data
+        if (data) {
+          setCache(cacheKey, data, { expirationMinutes: 15 })
+        }
+
+        return data
+      } catch (error: any) {
+        console.warn("Error in fetchProfile:", error.message)
         return null
       }
-
-      return data
-    } catch (error) {
-      console.error("Error in fetchProfile:", error)
-      return null
-    }
+    })
   }
 
-  // Refresh session
-  const refreshSession = async () => {
-    try {
-      const {
-        data: { session: newSession },
-      } = await supabase.auth.getSession()
+  // Refresh profile data
+  const refreshProfile = async (): Promise<Profile | null> => {
+    if (!user) return null
 
-      if (newSession) {
-        setSession(newSession)
-        setUser(newSession.user)
+    // Clear cache first
+    const cacheKey = `${PROFILE_CACHE_PREFIX}${user.id}`
+    removeCache(cacheKey)
 
-        const profile = await fetchProfile(newSession.user.id)
-        setProfile(profile)
-      }
-    } catch (error) {
-      console.error("Error refreshing session:", error)
+    // Fetch fresh profile
+    const freshProfile = await fetchProfile(user.id)
+    if (freshProfile) {
+      setProfile(freshProfile)
     }
+
+    return freshProfile
   }
 
   // Sign out
@@ -81,46 +118,89 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(null)
       setSession(null)
       setProfile(null)
-    } catch (error) {
-      console.error("Error signing out:", error)
+
+      // Clear all profile caches
+      if (typeof window !== "undefined") {
+        Object.keys(localStorage)
+          .filter((key) => key.startsWith(PROFILE_CACHE_PREFIX))
+          .forEach((key) => localStorage.removeItem(key))
+      }
+    } catch (error: any) {
+      console.warn("Error signing out:", error.message)
     }
   }
 
   // Initialize auth state
   useEffect(() => {
+    let isMounted = true
+
     const initAuth = async () => {
-      setIsLoading(true)
-      setInitAttempted(true)
+      await measure("initAuth", async () => {
+        try {
+          // First, try to get user from cache for immediate UI rendering
+          const cachedUser = getStoredUser()
+          if (cachedUser && isMounted) {
+            setUser(cachedUser)
+            // We'll still load the profile and verify the session, but the UI can render
+          }
 
-      try {
-        // Get initial session
-        const {
-          data: { session: initialSession },
-        } = await supabase.auth.getSession()
+          // Check session status
+          const sessionInfo = await checkSession()
 
-        if (initialSession) {
-          setSession(initialSession)
-          setUser(initialSession.user)
+          if (!isMounted) return
 
-          const profile = await fetchProfile(initialSession.user.id)
-          setProfile(profile)
+          if (sessionInfo.status === "authenticated") {
+            // Get session details
+            const { data } = await supabase.auth.getSession()
+
+            if (data.session) {
+              setSession(data.session)
+              setUser(data.session.user)
+
+              // Fetch profile in the background
+              fetchProfile(data.session.user.id).then((profileData) => {
+                if (isMounted && profileData) {
+                  setProfile(profileData)
+                }
+              })
+            }
+          } else {
+            // Not authenticated
+            setUser(null)
+            setSession(null)
+            setProfile(null)
+          }
+        } catch (error: any) {
+          console.warn("Error initializing auth:", error.message)
+        } finally {
+          if (isMounted) {
+            setIsLoading(false)
+            setIsInitialized(true)
+          }
         }
-      } catch (error) {
-        console.error("Error initializing auth:", error)
-      } finally {
-        setIsLoading(false)
-      }
+      })
+    }
 
-      // Set up auth state change listener
+    // Set up auth state change listener
+    const setupAuthListener = () => {
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+        if (!isMounted) return
+
+        console.debug("Auth state changed:", event)
+
         if (newSession) {
           setSession(newSession)
           setUser(newSession.user)
+          storeUser(newSession.user)
 
-          const profile = await fetchProfile(newSession.user.id)
-          setProfile(profile)
+          // Fetch profile in the background
+          fetchProfile(newSession.user.id).then((profileData) => {
+            if (isMounted && profileData) {
+              setProfile(profileData)
+            }
+          })
         } else {
           setSession(null)
           setUser(null)
@@ -130,23 +210,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsLoading(false)
       })
 
-      // Clean up subscription
+      // Return cleanup function
       return () => {
         subscription.unsubscribe()
       }
     }
 
+    // Initialize auth and set up listener
     initAuth()
+    const cleanup = setupAuthListener()
 
-    // Add a safety timeout to prevent infinite loading
-    const safetyTimeout = setTimeout(() => {
-      if (isLoading && initAttempted) {
-        console.warn("Auth provider safety timeout reached - forcing loading state to complete")
+    // Safety timeout - force loading to complete after 3 seconds
+    const timeoutId = setTimeout(() => {
+      if (isMounted && isLoading) {
+        console.warn("Safety timeout reached in AuthProvider")
         setIsLoading(false)
+        setIsInitialized(true)
       }
-    }, 5000)
+    }, 3000)
 
-    return () => clearTimeout(safetyTimeout)
+    return () => {
+      isMounted = false
+      clearTimeout(timeoutId)
+      cleanup()
+    }
   }, [])
 
   return (
@@ -156,8 +243,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         session,
         profile,
         isLoading,
+        isInitialized,
         signOut,
-        refreshSession,
+        refreshSession: async () => {
+          const sessionInfo = await refreshSession()
+          if (sessionInfo.status === "authenticated") {
+            const { data } = await supabase.auth.getSession()
+            if (data.session) {
+              setSession(data.session)
+              setUser(data.session.user)
+            }
+          }
+        },
+        refreshProfile,
       }}
     >
       {children}

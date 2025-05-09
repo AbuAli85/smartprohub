@@ -21,25 +21,96 @@ export default function ClientContractsPage() {
         const { data: session } = await supabase.auth.getSession()
         if (!session.session) return
 
+        // First, check the structure of the contracts table
+        const { data: tableInfo, error: tableError } = await supabase.from("contracts").select("*").limit(1)
+
+        if (tableError) {
+          console.error("Error checking contracts table:", tableError)
+          // If we can't query the table at all, show an error
+          throw tableError
+        }
+
+        // Determine which column to use for filtering based on what's available
+        let userIdColumn = "client_id" // Default attempt
+
+        // Check if the expected column exists in the table
+        if (tableInfo && tableInfo.length > 0) {
+          const sampleContract = tableInfo[0]
+
+          // Check for alternative column names that might store the client/user ID
+          if ("user_id" in sampleContract) {
+            userIdColumn = "user_id"
+          } else if ("customer_id" in sampleContract) {
+            userIdColumn = "customer_id"
+          } else if ("owner_id" in sampleContract) {
+            userIdColumn = "owner_id"
+          }
+        }
+
+        // Now query using the determined column name
         const { data, error } = await supabase
           .from("contracts")
-          .select(`
-            *,
-            provider:provider_id(id, full_name)
-          `)
-          .eq("client_id", session.session.user.id)
+          .select("*")
+          .eq(userIdColumn, session.session.user.id)
           .order("created_at", { ascending: false })
 
         if (error) {
-          throw error
+          // If the column doesn't exist, try without filtering by user
+          console.warn(`Error using ${userIdColumn} filter:`, error)
+
+          // Fallback: Get all contracts and filter client-side
+          const { data: allContracts, error: allError } = await supabase
+            .from("contracts")
+            .select("*")
+            .order("created_at", { ascending: false })
+
+          if (allError) {
+            throw allError
+          }
+
+          // Set contracts to empty array if we couldn't query properly
+          setContracts(allContracts || [])
+          setLoading(false)
+          return
         }
 
-        setContracts(data || [])
+        // If we need provider information, fetch it separately for each contract
+        const contractsWithProviders = await Promise.all(
+          (data || []).map(async (contract) => {
+            const providerId = contract.provider_id || contract.provider || contract.created_by
+
+            if (providerId) {
+              try {
+                const { data: providerData, error: providerError } = await supabase
+                  .from("profiles")
+                  .select("id, full_name")
+                  .eq("id", providerId)
+                  .single()
+
+                if (!providerError && providerData) {
+                  return {
+                    ...contract,
+                    provider: providerData,
+                  }
+                }
+              } catch (err) {
+                console.warn("Error fetching provider:", err)
+              }
+            }
+
+            return {
+              ...contract,
+              provider: { id: providerId, full_name: "Unknown Provider" },
+            }
+          }),
+        )
+
+        setContracts(contractsWithProviders)
       } catch (error: any) {
         console.error("Error fetching contracts:", error)
         toast({
           title: "Error",
-          description: "Failed to load contracts",
+          description: "Failed to load contracts: " + (error.message || "Unknown error"),
           variant: "destructive",
         })
       } finally {
@@ -68,12 +139,18 @@ export default function ClientContractsPage() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
+    if (!dateString) return "N/A"
+
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    } catch (e) {
+      return "Invalid Date"
+    }
   }
 
   if (loading) {
@@ -108,8 +185,8 @@ export default function ClientContractsPage() {
             contracts.map((contract) => (
               <Card key={contract.id} className="overflow-hidden">
                 <CardHeader className="flex flex-row items-center justify-between bg-muted/50 pb-2">
-                  <CardTitle className="text-lg font-medium">{contract.title}</CardTitle>
-                  {getStatusBadge(contract.status)}
+                  <CardTitle className="text-lg font-medium">{contract.title || "Untitled Contract"}</CardTitle>
+                  {getStatusBadge(contract.status || "unknown")}
                 </CardHeader>
                 <CardContent className="pt-4">
                   <div className="grid gap-4 md:grid-cols-2">
@@ -178,8 +255,8 @@ export default function ClientContractsPage() {
               .map((contract) => (
                 <Card key={contract.id} className="overflow-hidden">
                   <CardHeader className="flex flex-row items-center justify-between bg-muted/50 pb-2">
-                    <CardTitle className="text-lg font-medium">{contract.title}</CardTitle>
-                    {getStatusBadge(contract.status)}
+                    <CardTitle className="text-lg font-medium">{contract.title || "Untitled Contract"}</CardTitle>
+                    {getStatusBadge(contract.status || "unknown")}
                   </CardHeader>
                   <CardContent className="pt-4">
                     {/* Same content as above */}
@@ -247,8 +324,8 @@ export default function ClientContractsPage() {
               .map((contract) => (
                 <Card key={contract.id} className="overflow-hidden">
                   <CardHeader className="flex flex-row items-center justify-between bg-muted/50 pb-2">
-                    <CardTitle className="text-lg font-medium">{contract.title}</CardTitle>
-                    {getStatusBadge(contract.status)}
+                    <CardTitle className="text-lg font-medium">{contract.title || "Untitled Contract"}</CardTitle>
+                    {getStatusBadge(contract.status || "unknown")}
                   </CardHeader>
                   <CardContent className="pt-4">
                     <div className="grid gap-4 md:grid-cols-2">
