@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -22,12 +22,14 @@ export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirectTo") || "/dashboard"
+  const [redirectAttempted, setRedirectAttempted] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     setSuccess(null)
+    setRedirectAttempted(false)
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -37,22 +39,30 @@ export default function LoginPage() {
 
       if (error) {
         setError(error.message)
+        setLoading(false)
         return
       }
 
       if (data?.session) {
         setSuccess("Login successful! Redirecting...")
 
-        // Fetch user profile to determine role
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", data.session.user.id)
-          .single()
+        try {
+          // Fetch user profile to determine role
+          const { data: profileData, error: profileError } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", data.session.user.id)
+            .single()
 
-        // Redirect based on role if available
-        if (profileData?.role) {
-          setTimeout(() => {
+          if (profileError && profileError.code !== "PGRST116") {
+            console.error("Error fetching profile:", profileError)
+          }
+
+          // Set a flag to indicate we've attempted redirection
+          setRedirectAttempted(true)
+
+          // Redirect based on role if available
+          if (profileData?.role) {
             if (profileData.role === "admin") {
               router.push("/admin/dashboard")
             } else if (profileData.role === "provider") {
@@ -62,21 +72,40 @@ export default function LoginPage() {
             } else {
               router.push(redirectTo)
             }
-          }, 1000)
-        } else {
-          // If no role is set, redirect to profile setup
-          setTimeout(() => {
+          } else {
+            // If no role is set, redirect to profile setup
             router.push("/profile-setup")
-          }, 1000)
+          }
+        } catch (err) {
+          console.error("Error during redirect:", err)
+          // Fallback redirect if there's an error
+          router.push("/dashboard")
         }
       }
     } catch (err) {
       setError("An unexpected error occurred. Please try again.")
       console.error("Login error:", err)
-    } finally {
       setLoading(false)
     }
   }
+
+  // Safety timeout to prevent infinite loading state
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null
+
+    if (loading && redirectAttempted) {
+      timeoutId = setTimeout(() => {
+        console.warn("Login redirect timeout reached - forcing state reset")
+        setLoading(false)
+        // Force redirect to dashboard as fallback
+        window.location.href = "/dashboard"
+      }, 5000) // 5 seconds timeout
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [loading, redirectAttempted])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
@@ -94,7 +123,7 @@ export default function LoginPage() {
             )}
 
             {success && (
-              <Alert variant="success">
+              <Alert>
                 <AlertDescription>{success}</AlertDescription>
               </Alert>
             )}

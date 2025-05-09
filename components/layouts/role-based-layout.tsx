@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Loader2 } from "lucide-react"
 import type { UserRole } from "@/lib/supabase/database.types"
 import { Sidebar } from "@/components/dashboard/sidebar"
+import { useEffect } from "react"
 
 interface RoleBasedLayoutProps {
   children: React.ReactNode
@@ -18,7 +19,7 @@ interface RoleBasedLayoutProps {
 }
 
 export function RoleBasedLayout({ children, allowedRoles }: RoleBasedLayoutProps) {
-  const { isLoading, isAuthorized, userRole } = useRoleAuth({
+  const { isLoading, isAuthorized, userRole, error } = useRoleAuth({
     allowedRoles,
     redirectTo: "/auth/login",
     loadingComponent: (
@@ -28,10 +29,41 @@ export function RoleBasedLayout({ children, allowedRoles }: RoleBasedLayoutProps
     ),
   })
 
+  // Add a timeout to prevent infinite loading
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null
+
+    if (isLoading) {
+      timeoutId = setTimeout(() => {
+        console.error("Loading timeout reached - forcing refresh")
+        window.location.reload()
+      }, 10000) // 10 seconds timeout
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [isLoading])
+
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex h-screen w-full flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-sm text-muted-foreground">Loading your dashboard...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center">
+        <div className="max-w-md text-center p-6 bg-destructive/10 rounded-lg">
+          <h2 className="text-xl font-semibold mb-2">Authentication Error</h2>
+          <p className="text-sm text-muted-foreground mb-4">{error}</p>
+          <a href="/auth/login" className="text-primary hover:underline">
+            Return to login
+          </a>
+        </div>
       </div>
     )
   }

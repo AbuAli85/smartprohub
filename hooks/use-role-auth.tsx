@@ -22,10 +22,14 @@ export function useRoleAuth({ allowedRoles, redirectTo = "/auth/login", loadingC
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const pathname = usePathname()
+  const [fetchAttempted, setFetchAttempted] = useState(false)
 
   useEffect(() => {
     const checkUserRole = async () => {
+      // Don't proceed if auth is still loading
       if (authLoading) return
+
+      setFetchAttempted(true)
 
       // If Supabase is not configured, use demo mode
       if (!isSupabaseConfigured()) {
@@ -38,6 +42,8 @@ export function useRoleAuth({ allowedRoles, redirectTo = "/auth/login", loadingC
 
       if (!user) {
         // Not logged in, redirect to login
+        console.log("No user found, redirecting to login")
+        setIsLoading(false) // Set loading to false before redirect
         router.push(`${redirectTo}?redirectTo=${encodeURIComponent(pathname)}`)
         return
       }
@@ -72,11 +78,14 @@ export function useRoleAuth({ allowedRoles, redirectTo = "/auth/login", loadingC
 
           if (!hasAllowedRole) {
             // Redirect to appropriate dashboard based on default role
+            setIsLoading(false) // Set loading to false before redirect
             router.push("/client/dashboard")
+          } else {
+            setIsLoading(false)
           }
         } else {
           // Successfully fetched the role
-          const role = data.role as UserRole
+          const role = (data?.role as UserRole) || "client"
           setUserRole(role)
 
           // Check if user has an allowed role
@@ -85,6 +94,7 @@ export function useRoleAuth({ allowedRoles, redirectTo = "/auth/login", loadingC
 
           if (!hasAllowedRole) {
             // Redirect to appropriate dashboard based on role
+            setIsLoading(false) // Set loading to false before redirect
             switch (role) {
               case "admin":
                 router.push("/admin/dashboard")
@@ -98,6 +108,8 @@ export function useRoleAuth({ allowedRoles, redirectTo = "/auth/login", loadingC
               default:
                 router.push("/dashboard")
             }
+          } else {
+            setIsLoading(false)
           }
         }
       } catch (error) {
@@ -108,15 +120,23 @@ export function useRoleAuth({ allowedRoles, redirectTo = "/auth/login", loadingC
         const defaultRole: UserRole = "client"
         setUserRole(defaultRole)
         setIsAuthorized(allowedRoles.includes(defaultRole))
-
-        // Don't redirect in case of error, just stay on the current page
-      } finally {
         setIsLoading(false)
       }
     }
 
     checkUserRole()
-  }, [user, authLoading, allowedRoles, redirectTo, router, pathname])
+
+    // Add a safety timeout to prevent infinite loading
+    const safetyTimeout = setTimeout(() => {
+      if (isLoading && fetchAttempted) {
+        console.warn("Safety timeout reached - forcing loading state to complete")
+        setIsLoading(false)
+        setError("Authentication timed out. Please refresh the page.")
+      }
+    }, 8000)
+
+    return () => clearTimeout(safetyTimeout)
+  }, [user, authLoading, allowedRoles, redirectTo, router, pathname, isLoading, fetchAttempted])
 
   return { isLoading, isAuthorized, userRole, user, error }
 }

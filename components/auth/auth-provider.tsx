@@ -36,6 +36,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [initAttempted, setInitAttempted] = useState(false)
 
   // Fetch user profile
   const fetchProfile = async (userId: string) => {
@@ -89,6 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const initAuth = async () => {
       setIsLoading(true)
+      setInitAttempted(true)
 
       try {
         // Get initial session
@@ -135,6 +137,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     initAuth()
+
+    // Add a safety timeout to prevent infinite loading
+    const safetyTimeout = setTimeout(() => {
+      if (isLoading && initAttempted) {
+        console.warn("Auth provider safety timeout reached - forcing loading state to complete")
+        setIsLoading(false)
+      }
+    }, 5000)
+
+    return () => clearTimeout(safetyTimeout)
   }, [])
 
   return (
